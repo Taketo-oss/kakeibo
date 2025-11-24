@@ -11,6 +11,13 @@ import plotly.express as px
 ADMIN_USER = "taketo" 
 
 # ==========================================
+# 🕒 日本時間の定義 (ここを修正しました)
+# ==========================================
+# サーバーの時間はUTCなので、強制的に+9時間して日本日時に変換します
+JST = datetime.timezone(datetime.timedelta(hours=9))
+today = datetime.datetime.now(JST).date()
+
+# ==========================================
 # 🔌 データベース接続
 # ==========================================
 try:
@@ -29,7 +36,7 @@ supabase = init_connection()
 st.set_page_config(page_title="みんなの家計簿", page_icon="💰", layout="wide")
 
 # ==========================================
-# 🔐 ログイン・新規登録機能 (フォーム対応版)
+# 🔐 ログイン・新規登録機能
 # ==========================================
 def login():
     st.title("🔐 家計簿アプリ")
@@ -84,15 +91,12 @@ user_id = st.session_state['user_id']
 # 📱 メインアプリ画面
 # ==========================================
 
-# データの取得（ここでフィルタリングの準備をします）
-df_display = pd.DataFrame() # 表示用の空の箱
+# データの取得
+df_display = pd.DataFrame() 
 
-# まずは全データを取得するか、自分だけか
 if user_id == ADMIN_USER:
-    # 管理者は一旦全員分を取ってくる
     response = supabase.table('receipts').select("*").order('date', desc=True).execute()
 else:
-    # 一般ユーザーは自分だけ
     response = supabase.table('receipts').select("*").eq('user_id', user_id).order('date', desc=True).execute()
 
 raw_df = pd.DataFrame(response.data)
@@ -101,26 +105,22 @@ raw_df = pd.DataFrame(response.data)
 with st.sidebar:
     st.write(f"👤 User: **{user_id}**")
     
-    # ★★★ ここが新機能！管理者用フィルター ★★★
+    # 管理者用フィルター
     if user_id == ADMIN_USER:
         st.caption("👑 管理者メニュー")
         if not raw_df.empty:
-            # データの中にいるユーザー一覧を取得
             user_list = raw_df['user_id'].unique().tolist()
-            user_list.insert(0, "全員 (All Users)") # 先頭に「全員」を追加
+            user_list.insert(0, "全員 (All Users)")
             
-            # 誰のデータを見るか選択
             selected_view_user = st.selectbox("📊 誰のデータを見る？", user_list)
             
-            # データフレームを絞り込む
             if selected_view_user == "全員 (All Users)":
-                df_display = raw_df.copy() # 全員そのまま
+                df_display = raw_df.copy()
             else:
-                df_display = raw_df[raw_df['user_id'] == selected_view_user].copy() # 選んだ人だけ
+                df_display = raw_df[raw_df['user_id'] == selected_view_user].copy()
         else:
             df_display = raw_df.copy()
     else:
-        # 一般ユーザーは選択権なし（自分のデータのみ）
         df_display = raw_df.copy()
 
     if st.button("ログアウト"):
@@ -138,7 +138,8 @@ with st.sidebar:
         category_list = ["食費", "その他"]
 
     with st.form("input_form"):
-        date = st.date_input("日付", datetime.date.today())
+        # ★ここ修正: 日本時間の today をデフォルト値にする
+        date = st.date_input("日付", today)
         selected_cat = st.selectbox("カテゴリ", category_list)
         
         if selected_cat == "➕ 新しいカテゴリを追加...":
@@ -171,20 +172,15 @@ with st.sidebar:
             }
             supabase.table("receipts").insert(data).execute()
             st.success("保存しました！")
-            st.rerun() # 保存したら即反映
+            st.rerun()
 
 # --- メインコンテンツ ---
 st.title("💰 家計簿ダッシュボード")
 
-# フィルタリングされた df_display を使って表示
 if not df_display.empty:
     df_display['date'] = pd.to_datetime(df_display['date'])
     
-    # 誰のデータを表示中かタイトル出す
     if user_id == ADMIN_USER:
-        # 選択ボックスの値を取得（サイドバーのキーがないので変数から判断しにくいが、ロジックで対応）
-        # selectboxの返り値は変数に入っているので、再取得は難しいが、
-        # df_displayの中身を見て判断
         unique_users = df_display['user_id'].unique()
         if len(unique_users) > 1:
             st.warning(f"👑 全員（{len(unique_users)}名）のデータを合算表示中")
@@ -193,7 +189,8 @@ if not df_display.empty:
 
     tab1, tab2, tab3, tab4 = st.tabs(["📊 カテゴリ分析", "📈 日別推移", "📝 履歴一覧", "🔧 修正・削除"])
     
-    current_month = datetime.date.today().strftime("%Y-%m")
+    # ★ここ修正: 今月の判定も日本時間で行う
+    current_month = today.strftime("%Y-%m")
     df_this_month = df_display[df_display['date'].dt.strftime('%Y-%m') == current_month]
 
     with tab1:
@@ -235,7 +232,7 @@ if not df_display.empty:
         with st.form("edit_form"):
             col1, col2 = st.columns(2)
             new_date = col1.date_input("日付", target_row['date'])
-            # カテゴリリストにない古いカテゴリの場合の対策
+            
             current_cat_index = 0
             if target_row['category'] in category_list:
                 current_cat_index = category_list.index(target_row['category'])
