@@ -29,46 +29,56 @@ supabase = init_connection()
 st.set_page_config(page_title="みんなの家計簿", page_icon="💰", layout="wide")
 
 # ==========================================
-# 🔐 ログイン・新規登録機能
+# 🔐 ログイン・新規登録機能 (ここを修正しました！)
 # ==========================================
 def login():
     st.title("🔐 家計簿アプリ")
     tab1, tab2 = st.tabs(["ログイン", "新規登録"])
 
+    # --- 修正点：ここをフォーム化しました ---
     with tab1:
         st.subheader("ログイン")
-        l_user = st.text_input("ユーザー名", key="login_user")
-        l_pass = st.text_input("パスワード", type="password", key="login_pass")
-        
-        if st.button("ログインする", key="login_btn"):
-            if not l_user or not l_pass:
-                st.error("入力してください")
-            else:
-                try:
-                    res = supabase.table('users').select("*").eq('username', l_user).eq('password', l_pass).execute()
-                    if len(res.data) > 0:
-                        st.session_state['user_id'] = l_user
-                        st.toast(f"おかえりなさい、{l_user}さん！")
-                        st.rerun()
-                    else:
-                        st.error("ユーザー名またはパスワードが違います")
-                except Exception as e:
-                    st.error(f"ログインエラー: {e}")
+        # st.form で囲むことでブラウザに「これはログイン画面だよ」と教えます
+        with st.form("login_form"):
+            l_user = st.text_input("ユーザー名", key="login_user")
+            l_pass = st.text_input("パスワード", type="password", key="login_pass")
+            
+            # 普通のボタンではなく form_submit_button を使います
+            submitted = st.form_submit_button("ログインする")
+            
+            if submitted:
+                if not l_user or not l_pass:
+                    st.error("入力してください")
+                else:
+                    try:
+                        res = supabase.table('users').select("*").eq('username', l_user).eq('password', l_pass).execute()
+                        if len(res.data) > 0:
+                            st.session_state['user_id'] = l_user
+                            st.toast(f"おかえりなさい、{l_user}さん！")
+                            st.rerun()
+                        else:
+                            st.error("ユーザー名またはパスワードが違います")
+                    except Exception as e:
+                        st.error(f"ログインエラー: {e}")
 
     with tab2:
         st.subheader("新しくアカウントを作る")
-        r_user = st.text_input("希望のユーザー名", key="reg_user")
-        r_pass = st.text_input("パスワードを設定", type="password", key="reg_pass")
-        
-        if st.button("登録する", key="reg_btn"):
-            if not r_user or not r_pass:
-                st.error("入力してください")
-            else:
-                try:
-                    supabase.table('users').insert({"username": r_user, "password": r_pass}).execute()
-                    st.success("登録しました！「ログイン」タブからログインしてください。")
-                except:
-                    st.error("そのユーザー名は既に使用されています。")
+        # 新規登録もフォーム化しておきます
+        with st.form("reg_form"):
+            r_user = st.text_input("希望のユーザー名", key="reg_user")
+            r_pass = st.text_input("パスワードを設定", type="password", key="reg_pass")
+            
+            reg_submitted = st.form_submit_button("登録する")
+            
+            if reg_submitted:
+                if not r_user or not r_pass:
+                    st.error("入力してください")
+                else:
+                    try:
+                        supabase.table('users').insert({"username": r_user, "password": r_pass}).execute()
+                        st.success("登録しました！「ログイン」タブからログインしてください。")
+                    except:
+                        st.error("そのユーザー名は既に使用されています。")
 
 if 'user_id' not in st.session_state:
     login()
@@ -77,7 +87,7 @@ if 'user_id' not in st.session_state:
 user_id = st.session_state['user_id']
 
 # ==========================================
-# 📱 メインアプリ画面
+# 📱 メインアプリ画面 (ここは前回と同じ)
 # ==========================================
 
 with st.sidebar:
@@ -92,7 +102,6 @@ with st.sidebar:
     st.divider()
     st.header("✏️ 新規入力")
 
-    # カテゴリリスト取得
     try:
         cat_response = supabase.table('categories').select("name").execute()
         category_list = [item['name'] for item in cat_response.data]
@@ -100,7 +109,6 @@ with st.sidebar:
     except:
         category_list = ["食費", "その他"]
 
-    # 入力フォーム
     with st.form("input_form"):
         date = st.date_input("日付", datetime.date.today())
         selected_cat = st.selectbox("カテゴリ", category_list)
@@ -139,7 +147,6 @@ with st.sidebar:
 # --- メインコンテンツ ---
 st.title("💰 家計簿ダッシュボード")
 
-# データ取得
 if user_id == ADMIN_USER:
     response = supabase.table('receipts').select("*").order('date', desc=True).execute()
 else:
@@ -150,9 +157,6 @@ df = pd.DataFrame(response.data)
 if not df.empty:
     df['date'] = pd.to_datetime(df['date'])
     
-    # ---------------------------------------------------
-    # ★ここが新機能！タブに「修正・削除」を追加しました
-    # ---------------------------------------------------
     tab1, tab2, tab3, tab4 = st.tabs(["📊 カテゴリ分析", "📈 日別推移", "📝 履歴一覧", "🔧 修正・削除"])
     
     current_month = datetime.date.today().strftime("%Y-%m")
@@ -179,24 +183,19 @@ if not df.empty:
             cols.insert(0, 'user_id')
         st.dataframe(df[cols], use_container_width=True)
 
-    # --- 新機能：修正・削除タブ ---
     with tab4:
         st.subheader("データの修正・削除")
         st.caption("直近のデータから選択して修正できます")
 
-        # 編集対象を選ぶプルダウンを作る
-        # 見やすいように「日付 | メモ | 金額」の形式にする
         edit_options = df.copy()
         edit_options['label'] = edit_options.apply(lambda x: f"{x['date'].strftime('%Y-%m-%d')} | {x['memo']} | ¥{x['amount']}", axis=1)
         
-        # 選択ボックス
         selected_record_id = st.selectbox(
             "編集するデータを選んでください",
             edit_options['id'],
             format_func=lambda x: edit_options[edit_options['id'] == x]['label'].values[0]
         )
 
-        # 選んだデータの今の値を取得
         target_row = df[df['id'] == selected_record_id].iloc[0]
 
         with st.form("edit_form"):
@@ -207,8 +206,8 @@ if not df.empty:
             new_amount = st.number_input("金額", value=target_row['amount'], step=100)
 
             c1, c2 = st.columns([1, 1])
-            update_btn = c1.form_submit_button("更新する (Update)")
-            delete_btn = c2.form_submit_button("削除する (Delete)", type="primary")
+            update_btn = c1.form_submit_button("更新する")
+            delete_btn = c2.form_submit_button("削除する", type="primary")
 
             if update_btn:
                 supabase.table('receipts').update({
@@ -221,7 +220,6 @@ if not df.empty:
                 st.rerun()
 
             if delete_btn:
-                # 削除処理
                 supabase.table('receipts').delete().eq('id', int(selected_record_id)).execute()
                 st.success("データを削除しました！")
                 st.rerun()
