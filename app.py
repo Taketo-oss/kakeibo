@@ -29,21 +29,17 @@ supabase = init_connection()
 st.set_page_config(page_title="みんなの家計簿", page_icon="💰", layout="wide")
 
 # ==========================================
-# 🔐 ログイン・新規登録機能 (ここを修正しました！)
+# 🔐 ログイン・新規登録機能 (フォーム対応版)
 # ==========================================
 def login():
     st.title("🔐 家計簿アプリ")
     tab1, tab2 = st.tabs(["ログイン", "新規登録"])
 
-    # --- 修正点：ここをフォーム化しました ---
     with tab1:
         st.subheader("ログイン")
-        # st.form で囲むことでブラウザに「これはログイン画面だよ」と教えます
         with st.form("login_form"):
             l_user = st.text_input("ユーザー名", key="login_user")
             l_pass = st.text_input("パスワード", type="password", key="login_pass")
-            
-            # 普通のボタンではなく form_submit_button を使います
             submitted = st.form_submit_button("ログインする")
             
             if submitted:
@@ -63,11 +59,9 @@ def login():
 
     with tab2:
         st.subheader("新しくアカウントを作る")
-        # 新規登録もフォーム化しておきます
         with st.form("reg_form"):
             r_user = st.text_input("希望のユーザー名", key="reg_user")
             r_pass = st.text_input("パスワードを設定", type="password", key="reg_pass")
-            
             reg_submitted = st.form_submit_button("登録する")
             
             if reg_submitted:
@@ -87,14 +81,48 @@ if 'user_id' not in st.session_state:
 user_id = st.session_state['user_id']
 
 # ==========================================
-# 📱 メインアプリ画面 (ここは前回と同じ)
+# 📱 メインアプリ画面
 # ==========================================
 
+# データの取得（ここでフィルタリングの準備をします）
+df_display = pd.DataFrame() # 表示用の空の箱
+
+# まずは全データを取得するか、自分だけか
+if user_id == ADMIN_USER:
+    # 管理者は一旦全員分を取ってくる
+    response = supabase.table('receipts').select("*").order('date', desc=True).execute()
+else:
+    # 一般ユーザーは自分だけ
+    response = supabase.table('receipts').select("*").eq('user_id', user_id).order('date', desc=True).execute()
+
+raw_df = pd.DataFrame(response.data)
+
+# --- サイドバー ---
 with st.sidebar:
     st.write(f"👤 User: **{user_id}**")
-    if user_id == ADMIN_USER:
-        st.caption("👑 管理者権限あり")
     
+    # ★★★ ここが新機能！管理者用フィルター ★★★
+    if user_id == ADMIN_USER:
+        st.caption("👑 管理者メニュー")
+        if not raw_df.empty:
+            # データの中にいるユーザー一覧を取得
+            user_list = raw_df['user_id'].unique().tolist()
+            user_list.insert(0, "全員 (All Users)") # 先頭に「全員」を追加
+            
+            # 誰のデータを見るか選択
+            selected_view_user = st.selectbox("📊 誰のデータを見る？", user_list)
+            
+            # データフレームを絞り込む
+            if selected_view_user == "全員 (All Users)":
+                df_display = raw_df.copy() # 全員そのまま
+            else:
+                df_display = raw_df[raw_df['user_id'] == selected_view_user].copy() # 選んだ人だけ
+        else:
+            df_display = raw_df.copy()
+    else:
+        # 一般ユーザーは選択権なし（自分のデータのみ）
+        df_display = raw_df.copy()
+
     if st.button("ログアウト"):
         del st.session_state['user_id']
         st.rerun()
@@ -143,24 +171,30 @@ with st.sidebar:
             }
             supabase.table("receipts").insert(data).execute()
             st.success("保存しました！")
+            st.rerun() # 保存したら即反映
 
 # --- メインコンテンツ ---
 st.title("💰 家計簿ダッシュボード")
 
-if user_id == ADMIN_USER:
-    response = supabase.table('receipts').select("*").order('date', desc=True).execute()
-else:
-    response = supabase.table('receipts').select("*").eq('user_id', user_id).order('date', desc=True).execute()
-
-df = pd.DataFrame(response.data)
-
-if not df.empty:
-    df['date'] = pd.to_datetime(df['date'])
+# フィルタリングされた df_display を使って表示
+if not df_display.empty:
+    df_display['date'] = pd.to_datetime(df_display['date'])
     
+    # 誰のデータを表示中かタイトル出す
+    if user_id == ADMIN_USER:
+        # 選択ボックスの値を取得（サイドバーのキーがないので変数から判断しにくいが、ロジックで対応）
+        # selectboxの返り値は変数に入っているので、再取得は難しいが、
+        # df_displayの中身を見て判断
+        unique_users = df_display['user_id'].unique()
+        if len(unique_users) > 1:
+            st.warning(f"👑 全員（{len(unique_users)}名）のデータを合算表示中")
+        else:
+            st.success(f"🔍 {unique_users[0]} さんのデータを表示中")
+
     tab1, tab2, tab3, tab4 = st.tabs(["📊 カテゴリ分析", "📈 日別推移", "📝 履歴一覧", "🔧 修正・削除"])
     
     current_month = datetime.date.today().strftime("%Y-%m")
-    df_this_month = df[df['date'].dt.strftime('%Y-%m') == current_month]
+    df_this_month = df_display[df_display['date'].dt.strftime('%Y-%m') == current_month]
 
     with tab1:
         if not df_this_month.empty:
@@ -173,7 +207,7 @@ if not df.empty:
             
     with tab2:
         st.subheader("日別支出")
-        daily_data = df.groupby('date')['amount'].sum().reset_index()
+        daily_data = df_display.groupby('date')['amount'].sum().reset_index()
         fig_bar = px.bar(daily_data, x='date', y='amount')
         st.plotly_chart(fig_bar, use_container_width=True)
         
@@ -181,13 +215,13 @@ if not df.empty:
         cols = ['date', 'category', 'memo', 'amount']
         if user_id == ADMIN_USER:
             cols.insert(0, 'user_id')
-        st.dataframe(df[cols], use_container_width=True)
+        st.dataframe(df_display[cols], use_container_width=True)
 
     with tab4:
         st.subheader("データの修正・削除")
-        st.caption("直近のデータから選択して修正できます")
+        st.caption("表示中のデータから選択して修正できます")
 
-        edit_options = df.copy()
+        edit_options = df_display.copy()
         edit_options['label'] = edit_options.apply(lambda x: f"{x['date'].strftime('%Y-%m-%d')} | {x['memo']} | ¥{x['amount']}", axis=1)
         
         selected_record_id = st.selectbox(
@@ -196,12 +230,17 @@ if not df.empty:
             format_func=lambda x: edit_options[edit_options['id'] == x]['label'].values[0]
         )
 
-        target_row = df[df['id'] == selected_record_id].iloc[0]
+        target_row = df_display[df_display['id'] == selected_record_id].iloc[0]
 
         with st.form("edit_form"):
             col1, col2 = st.columns(2)
             new_date = col1.date_input("日付", target_row['date'])
-            new_cat = col2.selectbox("カテゴリ", category_list, index=category_list.index(target_row['category']) if target_row['category'] in category_list else 0)
+            # カテゴリリストにない古いカテゴリの場合の対策
+            current_cat_index = 0
+            if target_row['category'] in category_list:
+                current_cat_index = category_list.index(target_row['category'])
+            
+            new_cat = col2.selectbox("カテゴリ", category_list, index=current_cat_index)
             new_memo = st.text_input("メモ・店名", target_row['memo'])
             new_amount = st.number_input("金額", value=target_row['amount'], step=100)
 
