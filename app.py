@@ -7,8 +7,7 @@ import plotly.express as px
 # ==========================================
 # ⚙️ 設定エリア
 # ==========================================
-
-# ★ここにあなたのユーザー名を入れると、そのアカウントだけ全員のデータが見えるようになります
+# ★あなたのユーザー名（管理者）
 ADMIN_USER = "taketo" 
 
 # ==========================================
@@ -18,7 +17,7 @@ try:
     url = st.secrets["SUPABASE_URL"]
     key = st.secrets["SUPABASE_KEY"]
 except:
-    st.error("Supabaseのキー設定が見つかりません。StreamlitのSecretsを設定してください。")
+    st.error("Supabaseのキー設定が見つかりません。")
     st.stop()
 
 @st.cache_resource
@@ -34,11 +33,8 @@ st.set_page_config(page_title="みんなの家計簿", page_icon="💰", layout=
 # ==========================================
 def login():
     st.title("🔐 家計簿アプリ")
-    
-    # タブで切り替え
     tab1, tab2 = st.tabs(["ログイン", "新規登録"])
 
-    # --- 既存ユーザーログイン ---
     with tab1:
         st.subheader("ログイン")
         l_user = st.text_input("ユーザー名", key="login_user")
@@ -46,10 +42,9 @@ def login():
         
         if st.button("ログインする", key="login_btn"):
             if not l_user or not l_pass:
-                st.error("ユーザー名とパスワードを入力してください")
+                st.error("入力してください")
             else:
                 try:
-                    # ユーザーテーブルから検索
                     res = supabase.table('users').select("*").eq('username', l_user).eq('password', l_pass).execute()
                     if len(res.data) > 0:
                         st.session_state['user_id'] = l_user
@@ -60,7 +55,6 @@ def login():
                 except Exception as e:
                     st.error(f"ログインエラー: {e}")
 
-    # --- 新規ユーザー登録 ---
     with tab2:
         st.subheader("新しくアカウントを作る")
         r_user = st.text_input("希望のユーザー名", key="reg_user")
@@ -74,21 +68,18 @@ def login():
                     supabase.table('users').insert({"username": r_user, "password": r_pass}).execute()
                     st.success("登録しました！「ログイン」タブからログインしてください。")
                 except:
-                    st.error("そのユーザー名は既に使用されています。別の名前にしてください。")
+                    st.error("そのユーザー名は既に使用されています。")
 
-# ログインしていない場合はここでストップ
 if 'user_id' not in st.session_state:
     login()
     st.stop()
 
-# ログイン中のユーザーID
 user_id = st.session_state['user_id']
 
 # ==========================================
 # 📱 メインアプリ画面
 # ==========================================
 
-# --- サイドバー：ユーザー情報 & 入力フォーム ---
 with st.sidebar:
     st.write(f"👤 User: **{user_id}**")
     if user_id == ADMIN_USER:
@@ -99,7 +90,7 @@ with st.sidebar:
         st.rerun()
         
     st.divider()
-    st.header("✏️ 入力")
+    st.header("✏️ 新規入力")
 
     # カテゴリリスト取得
     try:
@@ -117,13 +108,12 @@ with st.sidebar:
         if selected_cat == "➕ 新しいカテゴリを追加...":
             st.info("下のメモ欄に新カテゴリ名を入力して保存してください")
             
-        memo = st.text_input("メモ・店名", placeholder="例: コンビニ, 新カテゴリ名")
+        memo = st.text_input("メモ・店名", placeholder="例: コンビニ")
         amount = st.number_input("金額", min_value=0, step=100)
         submitted = st.form_submit_button("記録する")
         
         if submitted:
             final_category = selected_cat
-            # カテゴリ追加ロジック
             if selected_cat == "➕ 新しいカテゴリを追加...":
                 if memo:
                     final_category = memo
@@ -131,12 +121,11 @@ with st.sidebar:
                         supabase.table('categories').insert({"name": final_category}).execute()
                         st.toast(f"カテゴリ「{final_category}」を追加！")
                     except:
-                        pass # 重複など
+                        pass
                 else:
                     st.error("新カテゴリ名を入力してください")
                     st.stop()
 
-            # データ保存
             data = {
                 "user_id": user_id,
                 "date": str(date),
@@ -147,16 +136,13 @@ with st.sidebar:
             supabase.table("receipts").insert(data).execute()
             st.success("保存しました！")
 
-# --- メインコンテンツ：ダッシュボード ---
+# --- メインコンテンツ ---
 st.title("💰 家計簿ダッシュボード")
 
-# データの取得（管理者かどうかで分岐）
+# データ取得
 if user_id == ADMIN_USER:
-    st.warning("👑 管理者モードで全ユーザーのデータを表示中")
-    # 全員分を取得
     response = supabase.table('receipts').select("*").order('date', desc=True).execute()
 else:
-    # 自分の分だけ取得
     response = supabase.table('receipts').select("*").eq('user_id', user_id).order('date', desc=True).execute()
 
 df = pd.DataFrame(response.data)
@@ -164,25 +150,20 @@ df = pd.DataFrame(response.data)
 if not df.empty:
     df['date'] = pd.to_datetime(df['date'])
     
-    # KPIエリア
-    col1, col2, col3 = st.columns(3)
+    # ---------------------------------------------------
+    # ★ここが新機能！タブに「修正・削除」を追加しました
+    # ---------------------------------------------------
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 カテゴリ分析", "📈 日別推移", "📝 履歴一覧", "🔧 修正・削除"])
+    
     current_month = datetime.date.today().strftime("%Y-%m")
     df_this_month = df[df['date'].dt.strftime('%Y-%m') == current_month]
-    
-    col1.metric("今月の出費", f"¥{df_this_month['amount'].sum():,}")
-    col2.metric("全期間の出費", f"¥{df['amount'].sum():,}")
-    col3.metric("データ件数", f"{len(df)} 件")
-    
-    st.divider()
-    
-    # グラフと履歴のタブ
-    tab1, tab2, tab3 = st.tabs(["📊 カテゴリ分析", "📈 日別推移", "📝 履歴データ"])
-    
+
     with tab1:
         if not df_this_month.empty:
             st.subheader("今月のカテゴリ割合")
             fig = px.pie(df_this_month, values='amount', names='category')
             st.plotly_chart(fig, use_container_width=True)
+            st.metric("今月の合計", f"¥{df_this_month['amount'].sum():,}")
         else:
             st.info("今月のデータがまだありません")
             
@@ -193,13 +174,57 @@ if not df.empty:
         st.plotly_chart(fig_bar, use_container_width=True)
         
     with tab3:
-        # 管理者の場合、誰のデータかもわかるようにする
         cols = ['date', 'category', 'memo', 'amount']
         if user_id == ADMIN_USER:
-            cols.insert(0, 'user_id') # 先頭にユーザーID列を追加
-            
+            cols.insert(0, 'user_id')
         st.dataframe(df[cols], use_container_width=True)
+
+    # --- 新機能：修正・削除タブ ---
+    with tab4:
+        st.subheader("データの修正・削除")
+        st.caption("直近のデータから選択して修正できます")
+
+        # 編集対象を選ぶプルダウンを作る
+        # 見やすいように「日付 | メモ | 金額」の形式にする
+        edit_options = df.copy()
+        edit_options['label'] = edit_options.apply(lambda x: f"{x['date'].strftime('%Y-%m-%d')} | {x['memo']} | ¥{x['amount']}", axis=1)
+        
+        # 選択ボックス
+        selected_record_id = st.selectbox(
+            "編集するデータを選んでください",
+            edit_options['id'],
+            format_func=lambda x: edit_options[edit_options['id'] == x]['label'].values[0]
+        )
+
+        # 選んだデータの今の値を取得
+        target_row = df[df['id'] == selected_record_id].iloc[0]
+
+        with st.form("edit_form"):
+            col1, col2 = st.columns(2)
+            new_date = col1.date_input("日付", target_row['date'])
+            new_cat = col2.selectbox("カテゴリ", category_list, index=category_list.index(target_row['category']) if target_row['category'] in category_list else 0)
+            new_memo = st.text_input("メモ・店名", target_row['memo'])
+            new_amount = st.number_input("金額", value=target_row['amount'], step=100)
+
+            c1, c2 = st.columns([1, 1])
+            update_btn = c1.form_submit_button("更新する (Update)")
+            delete_btn = c2.form_submit_button("削除する (Delete)", type="primary")
+
+            if update_btn:
+                supabase.table('receipts').update({
+                    "date": str(new_date),
+                    "category": new_cat,
+                    "memo": new_memo,
+                    "amount": new_amount
+                }).eq('id', int(selected_record_id)).execute()
+                st.success("データを更新しました！")
+                st.rerun()
+
+            if delete_btn:
+                # 削除処理
+                supabase.table('receipts').delete().eq('id', int(selected_record_id)).execute()
+                st.success("データを削除しました！")
+                st.rerun()
 
 else:
     st.info("データがありません。サイドバーから入力してください。")
-
