@@ -11,9 +11,8 @@ import plotly.express as px
 ADMIN_USER = "taketo" 
 
 # ==========================================
-# 🕒 日本時間の定義 (ここを修正しました)
+# 🕒 日本時間の定義
 # ==========================================
-# サーバーの時間はUTCなので、強制的に+9時間して日本日時に変換します
 JST = datetime.timezone(datetime.timedelta(hours=9))
 today = datetime.datetime.now(JST).date()
 
@@ -105,13 +104,11 @@ raw_df = pd.DataFrame(response.data)
 with st.sidebar:
     st.write(f"👤 User: **{user_id}**")
     
-    # 管理者用フィルター
     if user_id == ADMIN_USER:
         st.caption("👑 管理者メニュー")
         if not raw_df.empty:
             user_list = raw_df['user_id'].unique().tolist()
             user_list.insert(0, "全員 (All Users)")
-            
             selected_view_user = st.selectbox("📊 誰のデータを見る？", user_list)
             
             if selected_view_user == "全員 (All Users)":
@@ -138,7 +135,6 @@ with st.sidebar:
         category_list = ["食費", "その他"]
 
     with st.form("input_form"):
-        # ★ここ修正: 日本時間の today をデフォルト値にする
         date = st.date_input("日付", today)
         selected_cat = st.selectbox("カテゴリ", category_list)
         
@@ -187,9 +183,8 @@ if not df_display.empty:
         else:
             st.success(f"🔍 {unique_users[0]} さんのデータを表示中")
 
-    tab1, tab2, tab3, tab4 = st.tabs(["📊 カテゴリ分析", "📈 日別推移", "📝 履歴一覧", "🔧 修正・削除"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 カテゴリ分析", "📈 推移 (日/週/月)", "📝 履歴一覧", "🔧 修正・削除"])
     
-    # ★ここ修正: 今月の判定も日本時間で行う
     current_month = today.strftime("%Y-%m")
     df_this_month = df_display[df_display['date'].dt.strftime('%Y-%m') == current_month]
 
@@ -203,9 +198,27 @@ if not df_display.empty:
             st.info("今月のデータがまだありません")
             
     with tab2:
-        st.subheader("日別支出")
-        daily_data = df_display.groupby('date')['amount'].sum().reset_index()
-        fig_bar = px.bar(daily_data, x='date', y='amount')
+        st.subheader("支出の推移")
+        # ★ここが新機能！表示モードの切り替え
+        view_mode = st.radio("表示単位", ["日別", "週別", "月別"], horizontal=True)
+        
+        # データの加工 (Resample)
+        df_chart = df_display.copy().set_index('date')
+        
+        if view_mode == "日別":
+            chart_data = df_chart.resample('D')['amount'].sum().reset_index()
+            title_text = "日々の支出"
+        elif view_mode == "週別":
+            # 月曜始まりで集計
+            chart_data = df_chart.resample('W-MON')['amount'].sum().reset_index()
+            title_text = "週ごとの支出 (月曜始まり)"
+        else: # 月別
+            chart_data = df_chart.resample('MS')['amount'].sum().reset_index()
+            # 月だけの表記にするためにフォーマット調整
+            chart_data['date'] = chart_data['date'].dt.strftime('%Y-%m')
+            title_text = "月ごとの支出"
+
+        fig_bar = px.bar(chart_data, x='date', y='amount', title=title_text)
         st.plotly_chart(fig_bar, use_container_width=True)
         
     with tab3:
