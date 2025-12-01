@@ -3,11 +3,15 @@ from supabase import create_client, Client
 import pandas as pd
 import datetime
 import plotly.express as px
+# --- AIと画像処理用のライブラリを追加 ---
+import google.generativeai as genai
+from PIL import Image
+import io
+import json
 
 # ==========================================
 # ⚙️ 設定エリア
 # ==========================================
-# ★あなたのユーザー名（管理者）
 ADMIN_USER = "taketo" 
 
 # ==========================================
@@ -17,28 +21,68 @@ JST = datetime.timezone(datetime.timedelta(hours=9))
 today = datetime.datetime.now(JST).date()
 
 # ==========================================
-# 🔌 データベース接続
+# 🔌 データベース & AI接続
 # ==========================================
 try:
-    url = st.secrets["SUPABASE_URL"]
-    key = st.secrets["SUPABASE_KEY"]
-except:
-    st.error("Supabaseのキー設定が見つかりません。")
+    # Supabase接続
+    supabase_url = st.secrets["SUPABASE_URL"]
+    supabase_key = st.secrets["SUPABASE_KEY"]
+    supabase = create_client(supabase_url, supabase_key)
+
+    # Google Gemini接続 (追加!)
+    genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
+    # 画像読み取りが得意なモデル「Gemini 1.5 Flash」を使います
+    model = genai.GenerativeModel('gemini-1.5-flash')
+
+except Exception as e:
+    st.error(f"接続設定エラー: {e}")
     st.stop()
 
+# キャッシュ設定（Supabase接続のみ）
 @st.cache_resource
 def init_connection():
-    return create_client(url, key)
-
+    return create_client(supabase_url, supabase_key)
 supabase = init_connection()
 
-st.set_page_config(page_title="みんなの家計簿", page_icon="💰", layout="wide")
+st.set_page_config(page_title="AI家計簿", page_icon="💰", layout="wide")
 
 # ==========================================
-# 🔐 ログイン・新規登録機能
+# 🧠 AIによる画像解析関数 (ここが心臓部！)
+# ==========================================
+def analyze_receipt(image_data):
+    """Geminiにレシート画像を送って、JSONデータを返してもらう"""
+    img = Image.open(image_data)
+    
+    # AIへの命令文（プロンプト）
+    prompt = """
+    あなたはレシート読み取りの専門家です。この画像を解析し、以下の情報を抽出してJSON形式で出力してください。
+    - date: 日付 (YYYY-MM-DD形式。年が不明なら今年と仮定。見つからなければ今日の日付)
+    - store: 店名 (見つからなければ「不明」)
+    - amount: 合計金額 (数値のみ。見つからなければ 0)
+    - memo: 品目やメモ (主要な商品をいくつか、または店名を入れる)
+    
+    出力例:
+    {"date": "2023-11-24", "store": "セブンイレブン", "amount": 850, "memo": "おにぎり, お茶"}
+    """
+    
+    try:
+        # AIに画像と命令を送る
+        response = model.generate_content([prompt, img])
+        response_text = response.text
+        
+        # JSON形式のテキスト部分だけを綺麗に取り出す処理
+        cleaned_text = response_text.strip().replace("```json", "").replace("```", "")
+        result_json = json.loads(cleaned_text)
+        return result_json
+    except Exception as e:
+        st.error(f"AI解析エラー: {e}")
+        return None
+
+# ==========================================
+# 🔐 ログイン・新規登録機能 (省略せず記載)
 # ==========================================
 def login():
-    st.title("🔐 家計簿アプリ")
+    st.title("🔐 AI家計簿アプリ")
     tab1, tab2 = st.tabs(["ログイン", "新規登録"])
 
     with tab1:
@@ -122,11 +166,15 @@ with st.sidebar:
 
     if st.button("ログアウト"):
         del st.session_state['user_id']
+        # セッション状態をクリア
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
         st.rerun()
         
     st.divider()
     st.header("✏️ 新規入力")
 
+    # カテゴリリスト取得
     try:
         cat_response = supabase.table('categories').select("name").execute()
         category_list = [item['name'] for item in cat_response.data]
@@ -134,16 +182,56 @@ with st.sidebar:
     except:
         category_list = ["食費", "その他"]
 
+    # ==========================================
+    # 📷 ここが新機能！レシート撮影エリア
+    # ==========================================
+    st.subheader("1. レシートを撮影 (任意)")
+    # スマホではカメラが起動、PCではWebカメラが起動します
+    picture = st.camera_input("レシートを撮影すると自動入力されます")
+
+    # AIの解析結果を一時保存する変数
+    ai_date = today
+    ai_memo = ""
+    ai_amount = 0
+
+    if picture:
+        with st.spinner('AIがレシートを解析中...'):
+            # 撮影された画像をAIに送る
+            ai_result = analyze_receipt(picture)
+            
+            if ai_result:
+                st.success("読み取り成功！下のフォームを確認してください。")
+                # 結果を変数にセット（エラー回避のためtryで囲む）
+                try:
+                    ai_date = datetime.datetime.strptime(ai_result.get('date', str(today)), '%Y-%m-%d').date()
+                    ai_store = ai_result.get('store', '')
+                    ai_memo_raw = ai_result.get('memo', '')
+                    # 店名とメモをくっつけて「メモ欄」に入れる
+                    ai_memo = f"{ai_store} {ai_memo_raw}".strip()
+                    ai_amount = int(ai_result.get('amount', 0))
+                except:
+                    st.warning("一部のデータがうまく読み取れませんでした。手動で修正してください。")
+
+    st.divider()
+
+    # ==========================================
+    # 📝 入力フォーム (AIの結果を初期値に設定)
+    # ==========================================
+    st.subheader("2. 内容を確認して記録")
+    
     with st.form("input_form"):
-        date = st.date_input("日付", today)
-        selected_cat = st.selectbox("カテゴリ", category_list)
+        # value=... にAIの結果(または初期値)をセットします
+        date = st.date_input("日付", value=ai_date)
         
+        selected_cat = st.selectbox("カテゴリ", category_list)
         if selected_cat == "➕ 新しいカテゴリを追加...":
             st.info("下のメモ欄に新カテゴリ名を入力して保存してください")
             
-        memo = st.text_input("メモ・店名", placeholder="例: コンビニ")
-        amount = st.number_input("金額", min_value=0, step=100)
-        submitted = st.form_submit_button("記録する")
+        # value=... にAIの結果をセット
+        memo = st.text_input("メモ・店名", value=ai_memo, placeholder="例: コンビニ")
+        amount = st.number_input("金額", value=ai_amount, min_value=0, step=100)
+        
+        submitted = st.form_submit_button("この内容で記録する", type="primary")
         
         if submitted:
             final_category = selected_cat
@@ -159,6 +247,10 @@ with st.sidebar:
                     st.error("新カテゴリ名を入力してください")
                     st.stop()
 
+            if amount == 0:
+                st.warning("金額が0円です。確認してください。")
+                st.stop()
+
             data = {
                 "user_id": user_id,
                 "date": str(date),
@@ -168,9 +260,10 @@ with st.sidebar:
             }
             supabase.table("receipts").insert(data).execute()
             st.success("保存しました！")
+            # フォームをリセットするためにリロード
             st.rerun()
 
-# --- メインコンテンツ ---
+# --- メインコンテンツ (前回と同じ) ---
 st.title("💰 家計簿ダッシュボード")
 
 if not df_display.empty:
@@ -199,22 +292,17 @@ if not df_display.empty:
             
     with tab2:
         st.subheader("支出の推移")
-        # ★ここが新機能！表示モードの切り替え
         view_mode = st.radio("表示単位", ["日別", "週別", "月別"], horizontal=True)
-        
-        # データの加工 (Resample)
         df_chart = df_display.copy().set_index('date')
         
         if view_mode == "日別":
             chart_data = df_chart.resample('D')['amount'].sum().reset_index()
             title_text = "日々の支出"
         elif view_mode == "週別":
-            # 月曜始まりで集計
             chart_data = df_chart.resample('W-MON')['amount'].sum().reset_index()
             title_text = "週ごとの支出 (月曜始まり)"
-        else: # 月別
+        else: 
             chart_data = df_chart.resample('MS')['amount'].sum().reset_index()
-            # 月だけの表記にするためにフォーマット調整
             chart_data['date'] = chart_data['date'].dt.strftime('%Y-%m')
             title_text = "月ごとの支出"
 
