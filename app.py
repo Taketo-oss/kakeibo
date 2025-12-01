@@ -32,9 +32,8 @@ try:
     # Google Gemini接続
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
     
-    # ★プランB適用: 最新バージョンを自動で掴む設定に変更
-    model = genai.GenerativeModel('gemini-1.5-flash-latest')
-
+    model = genai.GenerativeModel('gemini-1.5-flash-001')
+    
 except Exception as e:
     st.error(f"接続設定エラー: {e}")
     st.stop()
@@ -358,3 +357,4 @@ if not df_display.empty:
 
 else:
     st.info("データがありません。サイドバーから入力してください。")
+
