@@ -3,7 +3,7 @@ from supabase import create_client, Client
 import pandas as pd
 import datetime
 import plotly.express as px
-# --- AIと画像処理用のライブラリを追加 ---
+# --- AIと画像処理用のライブラリ ---
 import google.generativeai as genai
 from PIL import Image
 import io
@@ -29,16 +29,16 @@ try:
     supabase_key = st.secrets["SUPABASE_KEY"]
     supabase = create_client(supabase_url, supabase_key)
 
-    # Google Gemini接続 (追加!)
+    # Google Gemini接続
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-    # 画像読み取りが得意なモデル「Gemini 1.5 Flash」を使います
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    
+    # ★プランB適用: 最新バージョンを自動で掴む設定に変更
+    model = genai.GenerativeModel('gemini-1.5-flash-latest')
 
 except Exception as e:
     st.error(f"接続設定エラー: {e}")
     st.stop()
 
-# キャッシュ設定（Supabase接続のみ）
 @st.cache_resource
 def init_connection():
     return create_client(supabase_url, supabase_key)
@@ -47,13 +47,16 @@ supabase = init_connection()
 st.set_page_config(page_title="AI家計簿", page_icon="💰", layout="wide")
 
 # ==========================================
-# 🧠 AIによる画像解析関数 (ここが心臓部！)
+# 🧠 AIによる画像解析関数
 # ==========================================
 def analyze_receipt(image_data):
     """Geminiにレシート画像を送って、JSONデータを返してもらう"""
-    img = Image.open(image_data)
-    
-    # AIへの命令文（プロンプト）
+    try:
+        img = Image.open(image_data)
+    except:
+        st.error("画像の読み込みに失敗しました。")
+        return None
+        
     prompt = """
     あなたはレシート読み取りの専門家です。この画像を解析し、以下の情報を抽出してJSON形式で出力してください。
     - date: 日付 (YYYY-MM-DD形式。年が不明なら今年と仮定。見つからなければ今日の日付)
@@ -66,20 +69,17 @@ def analyze_receipt(image_data):
     """
     
     try:
-        # AIに画像と命令を送る
         response = model.generate_content([prompt, img])
         response_text = response.text
-        
-        # JSON形式のテキスト部分だけを綺麗に取り出す処理
         cleaned_text = response_text.strip().replace("```json", "").replace("```", "")
         result_json = json.loads(cleaned_text)
         return result_json
     except Exception as e:
-        st.error(f"AI解析エラー: {e}")
+        st.error(f"AI解析エラー: {e}. 時間をおいて再度お試しください。")
         return None
 
 # ==========================================
-# 🔐 ログイン・新規登録機能 (省略せず記載)
+# 🔐 ログイン・新規登録機能
 # ==========================================
 def login():
     st.title("🔐 AI家計簿アプリ")
@@ -166,7 +166,6 @@ with st.sidebar:
 
     if st.button("ログアウト"):
         del st.session_state['user_id']
-        # セッション状態をクリア
         for key in list(st.session_state.keys()):
             del st.session_state[key]
         st.rerun()
@@ -183,34 +182,33 @@ with st.sidebar:
         category_list = ["食費", "その他"]
 
     # ==========================================
-    # 📷 ここが新機能！レシート撮影エリア
+    # 📁 レシート画像のアップロードエリア
     # ==========================================
-    st.subheader("1. レシートを撮影 (任意)")
-    # スマホではカメラが起動、PCではWebカメラが起動します
-    picture = st.camera_input("レシートを撮影すると自動入力されます")
+    st.subheader("1. レシート画像をアップロード")
+    st.caption("スマホのアルバムやPCのフォルダから選択してください")
+    
+    upload_file = st.file_uploader("ここをタップして画像を選択", type=['png', 'jpg', 'jpeg', 'heic'])
 
     # AIの解析結果を一時保存する変数
     ai_date = today
     ai_memo = ""
     ai_amount = 0
 
-    if picture:
+    # 画像がセットされたら解析開始
+    if upload_file:
         with st.spinner('AIがレシートを解析中...'):
-            # 撮影された画像をAIに送る
-            ai_result = analyze_receipt(picture)
+            ai_result = analyze_receipt(upload_file)
             
             if ai_result:
                 st.success("読み取り成功！下のフォームを確認してください。")
-                # 結果を変数にセット（エラー回避のためtryで囲む）
                 try:
                     ai_date = datetime.datetime.strptime(ai_result.get('date', str(today)), '%Y-%m-%d').date()
                     ai_store = ai_result.get('store', '')
                     ai_memo_raw = ai_result.get('memo', '')
-                    # 店名とメモをくっつけて「メモ欄」に入れる
                     ai_memo = f"{ai_store} {ai_memo_raw}".strip()
                     ai_amount = int(ai_result.get('amount', 0))
                 except:
-                    st.warning("一部のデータがうまく読み取れませんでした。手動で修正してください。")
+                    st.warning("一部データが読み取れませんでした。修正してください。")
 
     st.divider()
 
@@ -220,14 +218,12 @@ with st.sidebar:
     st.subheader("2. 内容を確認して記録")
     
     with st.form("input_form"):
-        # value=... にAIの結果(または初期値)をセットします
         date = st.date_input("日付", value=ai_date)
         
         selected_cat = st.selectbox("カテゴリ", category_list)
         if selected_cat == "➕ 新しいカテゴリを追加...":
             st.info("下のメモ欄に新カテゴリ名を入力して保存してください")
             
-        # value=... にAIの結果をセット
         memo = st.text_input("メモ・店名", value=ai_memo, placeholder="例: コンビニ")
         amount = st.number_input("金額", value=ai_amount, min_value=0, step=100)
         
@@ -260,10 +256,9 @@ with st.sidebar:
             }
             supabase.table("receipts").insert(data).execute()
             st.success("保存しました！")
-            # フォームをリセットするためにリロード
             st.rerun()
 
-# --- メインコンテンツ (前回と同じ) ---
+# --- メインコンテンツ ---
 st.title("💰 家計簿ダッシュボード")
 
 if not df_display.empty:
