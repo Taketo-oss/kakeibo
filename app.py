@@ -3,14 +3,11 @@ from supabase import create_client, Client
 import pandas as pd
 import datetime
 import plotly.express as px
-import google.generativeai as genai
-from PIL import Image
-import io
-import json
 
 # ==========================================
 # ⚙️ 設定エリア
 # ==========================================
+# ★あなたのユーザー名（管理者）
 ADMIN_USER = "taketo" 
 
 # ==========================================
@@ -20,75 +17,28 @@ JST = datetime.timezone(datetime.timedelta(hours=9))
 today = datetime.datetime.now(JST).date()
 
 # ==========================================
-# 🔌 データベース & AI接続準備
+# 🔌 データベース接続
 # ==========================================
 try:
-    supabase_url = st.secrets["SUPABASE_URL"]
-    supabase_key = st.secrets["SUPABASE_KEY"]
-    supabase = create_client(supabase_url, supabase_key)
-    genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-
-except Exception as e:
-    st.error(f"接続設定エラー: {e}")
+    url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_KEY"]
+except:
+    st.error("Supabaseのキー設定が見つかりません。")
     st.stop()
 
 @st.cache_resource
 def init_connection():
-    return create_client(supabase_url, supabase_key)
+    return create_client(url, key)
+
 supabase = init_connection()
 
-st.set_page_config(page_title="AI家計簿", page_icon="💰", layout="wide")
-
-# ==========================================
-# 🤖 AIモデル設定 (ここを修正しました！)
-# ==========================================
-# 自動取得をやめて、確実に動く無料モデルだけを手動で指定します
-# これなら「429 Quota exceeded (limit: 0)」エラーは出ません
-model_options = [
-    "models/gemini-1.5-flash",      # 一番おすすめ（高速・無料）
-    "models/gemini-1.5-flash-001",  # バージョン指定版
-    "models/gemini-1.5-pro",        # 性能重視（少し遅い）
-]
-
-# ==========================================
-# 🧠 画像解析関数
-# ==========================================
-def analyze_receipt(image_data, model_name):
-    try:
-        img = Image.open(image_data)
-    except:
-        st.error("画像の読み込みに失敗しました。")
-        return None
-    
-    model = genai.GenerativeModel(model_name)
-
-    prompt = """
-    あなたはレシート読み取りの専門家です。この画像を解析し、以下の情報を抽出してJSON形式で出力してください。
-    - date: 日付 (YYYY-MM-DD形式。年が不明なら今年と仮定。見つからなければ今日の日付)
-    - store: 店名 (見つからなければ「不明」)
-    - amount: 合計金額 (数値のみ。見つからなければ 0)
-    - memo: 品目やメモ (主要な商品をいくつか、または店名を入れる)
-    
-    出力例:
-    {"date": "2023-11-24", "store": "セブンイレブン", "amount": 850, "memo": "おにぎり, お茶"}
-    """
-    
-    try:
-        response = model.generate_content([prompt, img])
-        response_text = response.text
-        cleaned_text = response_text.strip().replace("```json", "").replace("```", "")
-        result_json = json.loads(cleaned_text)
-        return result_json
-    except Exception as e:
-        # エラー詳細を表示しないようにマイルドにする
-        st.error(f"AI解析エラー: モデル {model_name} が混雑しているか、制限を超えました。別のモデルを選んでください。")
-        return None
+st.set_page_config(page_title="家計簿アプリ", page_icon="💰", layout="wide")
 
 # ==========================================
 # 🔐 ログイン・新規登録機能
 # ==========================================
 def login():
-    st.title("🔐 AI家計簿アプリ")
+    st.title("🔐 家計簿アプリ")
     tab1, tab2 = st.tabs(["ログイン", "新規登録"])
 
     with tab1:
@@ -154,12 +104,7 @@ raw_df = pd.DataFrame(response.data)
 with st.sidebar:
     st.write(f"👤 User: **{user_id}**")
     
-    # ★モデル選択ボックス
-    st.caption("🤖 AI設定")
-    selected_model = st.selectbox("使用するAIモデル", model_options, index=0)
-
     if user_id == ADMIN_USER:
-        st.divider()
         st.caption("👑 管理者メニュー")
         if not raw_df.empty:
             user_list = raw_df['user_id'].unique().tolist()
@@ -184,6 +129,7 @@ with st.sidebar:
     st.divider()
     st.header("✏️ 新規入力")
 
+    # カテゴリリスト取得
     try:
         cat_response = supabase.table('categories').select("name").execute()
         category_list = [item['name'] for item in cat_response.data]
@@ -191,45 +137,20 @@ with st.sidebar:
     except:
         category_list = ["食費", "その他"]
 
-    # 画像アップロード
-    st.subheader("1. 画像を選択")
-    upload_file = st.file_uploader("レシート画像をアップロード", type=['png', 'jpg', 'jpeg', 'heic'])
-
-    ai_date = today
-    ai_memo = ""
-    ai_amount = 0
-
-    if upload_file:
-        with st.spinner(f'{selected_model} で解析中...'):
-            ai_result = analyze_receipt(upload_file, selected_model)
-            
-            if ai_result:
-                st.success("読み取り成功！")
-                try:
-                    ai_date = datetime.datetime.strptime(ai_result.get('date', str(today)), '%Y-%m-%d').date()
-                    ai_store = ai_result.get('store', '')
-                    ai_memo_raw = ai_result.get('memo', '')
-                    ai_memo = f"{ai_store} {ai_memo_raw}".strip()
-                    ai_amount = int(ai_result.get('amount', 0))
-                except:
-                    st.warning("一部のデータ修正が必要です")
-
-    st.divider()
-
-    # 入力フォーム
-    st.subheader("2. 内容を確認して記録")
-    
+    # ==========================================
+    # 📝 シンプルな入力フォーム
+    # ==========================================
     with st.form("input_form"):
-        date = st.date_input("日付", value=ai_date)
-        
+        date = st.date_input("日付", today)
         selected_cat = st.selectbox("カテゴリ", category_list)
+        
         if selected_cat == "➕ 新しいカテゴリを追加...":
             st.info("下のメモ欄に新カテゴリ名を入力して保存してください")
             
-        memo = st.text_input("メモ・店名", value=ai_memo, placeholder="例: コンビニ")
-        amount = st.number_input("金額", value=ai_amount, min_value=0, step=100)
+        memo = st.text_input("メモ・店名", placeholder="例: コンビニ")
+        amount = st.number_input("金額", min_value=0, step=100)
         
-        submitted = st.form_submit_button("この内容で記録する", type="primary")
+        submitted = st.form_submit_button("記録する", type="primary")
         
         if submitted:
             final_category = selected_cat
@@ -246,7 +167,7 @@ with st.sidebar:
                     st.stop()
 
             if amount == 0:
-                st.warning("金額が0円です。確認してください。")
+                st.warning("金額が0円です。")
                 st.stop()
 
             data = {
