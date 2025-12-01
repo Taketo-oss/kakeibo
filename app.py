@@ -3,7 +3,6 @@ from supabase import create_client, Client
 import pandas as pd
 import datetime
 import plotly.express as px
-# --- AIと画像処理用のライブラリ ---
 import google.generativeai as genai
 from PIL import Image
 import io
@@ -14,6 +13,12 @@ import json
 # ==========================================
 ADMIN_USER = "taketo" 
 
+# 使用するAIモデルの定義（IDと表示名のペア）
+AI_MODELS = {
+    "models/gemini-2.5-flash-image": "⚡️ Flash (高速・通常用) - 基本はこれ！",
+    "models/gemini-3-pro-image-preview": "🧠 Pro (高精度) - 文字が読み取れない時に"
+}
+
 # ==========================================
 # 🕒 日本時間の定義
 # ==========================================
@@ -21,17 +26,13 @@ JST = datetime.timezone(datetime.timedelta(hours=9))
 today = datetime.datetime.now(JST).date()
 
 # ==========================================
-# 🔌 データベース & AI接続準備
+# 🔌 データベース & AI接続
 # ==========================================
 try:
-    # Supabase接続
     supabase_url = st.secrets["SUPABASE_URL"]
     supabase_key = st.secrets["SUPABASE_KEY"]
     supabase = create_client(supabase_url, supabase_key)
-
-    # Google Gemini接続設定
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-
 except Exception as e:
     st.error(f"接続設定エラー: {e}")
     st.stop()
@@ -44,23 +45,9 @@ supabase = init_connection()
 st.set_page_config(page_title="AI家計簿", page_icon="💰", layout="wide")
 
 # ==========================================
-# 🧠 AIモデルの動的取得 (ここが修正ポイント！)
-# ==========================================
-# エラー回避のため、使えるモデルをリストアップしてユーザーに選ばせる
-model_options = []
-try:
-    for m in genai.list_models():
-        if 'generateContent' in m.supported_generation_methods:
-            model_options.append(m.name)
-except:
-    # 取得できなかった場合の予備
-    model_options = ["models/gemini-1.5-flash", "models/gemini-pro-vision"]
-
-# ==========================================
 # 🧠 画像解析関数
 # ==========================================
 def analyze_receipt(image_data, model_name):
-    """Geminiにレシート画像を送って、JSONデータを返してもらう"""
     try:
         img = Image.open(image_data)
     except:
@@ -161,9 +148,21 @@ raw_df = pd.DataFrame(response.data)
 with st.sidebar:
     st.write(f"👤 User: **{user_id}**")
     
-    # ★ここに「モデル選択」を追加
+    # ==========================================
+    # 🤖 AIモデル選択 (ここを修正しました)
+    # ==========================================
     st.caption("🤖 AI設定")
-    selected_model = st.selectbox("使用するAIモデル", model_options, index=0)
+    # キー(ID)をリストにして渡し、表示には辞書の値(説明文)を使う
+    selected_model_id = st.selectbox(
+        "使用するAIモデル",
+        options=list(AI_MODELS.keys()),
+        format_func=lambda x: AI_MODELS[x]
+    )
+    # 選択したモデルの説明を表示してあげる
+    if "Flash" in AI_MODELS[selected_model_id]:
+        st.info("ℹ️ **Flash**: 処理が速いです。普段はこれを使ってください。")
+    else:
+        st.warning("ℹ️ **Pro**: 賢いですが処理制限があります。Flashで読めない時だけ使いましょう。")
 
     if user_id == ADMIN_USER:
         st.divider()
@@ -209,9 +208,8 @@ with st.sidebar:
     ai_amount = 0
 
     if upload_file:
-        with st.spinner(f'{selected_model} で解析中...'):
-            # 選ばれたモデル名を渡して解析
-            ai_result = analyze_receipt(upload_file, selected_model)
+        with st.spinner('AIがレシートを解析中...'):
+            ai_result = analyze_receipt(upload_file, selected_model_id)
             
             if ai_result:
                 st.success("読み取り成功！")
@@ -272,7 +270,7 @@ with st.sidebar:
             st.success("保存しました！")
             st.rerun()
 
-# --- メインコンテンツ ---
+# --- メインコンテンツ (前回と同じ) ---
 st.title("💰 家計簿ダッシュボード")
 
 if not df_display.empty:
