@@ -21,7 +21,7 @@ JST = datetime.timezone(datetime.timedelta(hours=9))
 today = datetime.datetime.now(JST).date()
 
 # ==========================================
-# 🔌 データベース & AI接続
+# 🔌 データベース & AI接続準備
 # ==========================================
 try:
     # Supabase接続
@@ -29,11 +29,9 @@ try:
     supabase_key = st.secrets["SUPABASE_KEY"]
     supabase = create_client(supabase_url, supabase_key)
 
-    # Google Gemini接続
+    # Google Gemini接続設定
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-    
-    model = genai.GenerativeModel('gemini-1.5-flash-001')
-    
+
 except Exception as e:
     st.error(f"接続設定エラー: {e}")
     st.stop()
@@ -46,16 +44,32 @@ supabase = init_connection()
 st.set_page_config(page_title="AI家計簿", page_icon="💰", layout="wide")
 
 # ==========================================
-# 🧠 AIによる画像解析関数
+# 🧠 AIモデルの動的取得 (ここが修正ポイント！)
 # ==========================================
-def analyze_receipt(image_data):
+# エラー回避のため、使えるモデルをリストアップしてユーザーに選ばせる
+model_options = []
+try:
+    for m in genai.list_models():
+        if 'generateContent' in m.supported_generation_methods:
+            model_options.append(m.name)
+except:
+    # 取得できなかった場合の予備
+    model_options = ["models/gemini-1.5-flash", "models/gemini-pro-vision"]
+
+# ==========================================
+# 🧠 画像解析関数
+# ==========================================
+def analyze_receipt(image_data, model_name):
     """Geminiにレシート画像を送って、JSONデータを返してもらう"""
     try:
         img = Image.open(image_data)
     except:
         st.error("画像の読み込みに失敗しました。")
         return None
-        
+    
+    # 選ばれたモデルで初期化
+    model = genai.GenerativeModel(model_name)
+
     prompt = """
     あなたはレシート読み取りの専門家です。この画像を解析し、以下の情報を抽出してJSON形式で出力してください。
     - date: 日付 (YYYY-MM-DD形式。年が不明なら今年と仮定。見つからなければ今日の日付)
@@ -74,7 +88,7 @@ def analyze_receipt(image_data):
         result_json = json.loads(cleaned_text)
         return result_json
     except Exception as e:
-        st.error(f"AI解析エラー: {e}. 時間をおいて再度お試しください。")
+        st.error(f"AI解析エラー: {e}")
         return None
 
 # ==========================================
@@ -147,7 +161,12 @@ raw_df = pd.DataFrame(response.data)
 with st.sidebar:
     st.write(f"👤 User: **{user_id}**")
     
+    # ★ここに「モデル選択」を追加
+    st.caption("🤖 AI設定")
+    selected_model = st.selectbox("使用するAIモデル", model_options, index=0)
+
     if user_id == ADMIN_USER:
+        st.divider()
         st.caption("👑 管理者メニュー")
         if not raw_df.empty:
             user_list = raw_df['user_id'].unique().tolist()
@@ -172,7 +191,6 @@ with st.sidebar:
     st.divider()
     st.header("✏️ 新規入力")
 
-    # カテゴリリスト取得
     try:
         cat_response = supabase.table('categories').select("name").execute()
         category_list = [item['name'] for item in cat_response.data]
@@ -181,25 +199,22 @@ with st.sidebar:
         category_list = ["食費", "その他"]
 
     # ==========================================
-    # 📁 レシート画像のアップロードエリア
+    # 📁 画像アップロードエリア
     # ==========================================
-    st.subheader("1. レシート画像をアップロード")
-    st.caption("スマホのアルバムやPCのフォルダから選択してください")
-    
-    upload_file = st.file_uploader("ここをタップして画像を選択", type=['png', 'jpg', 'jpeg', 'heic'])
+    st.subheader("1. 画像を選択")
+    upload_file = st.file_uploader("レシート画像をアップロード", type=['png', 'jpg', 'jpeg', 'heic'])
 
-    # AIの解析結果を一時保存する変数
     ai_date = today
     ai_memo = ""
     ai_amount = 0
 
-    # 画像がセットされたら解析開始
     if upload_file:
-        with st.spinner('AIがレシートを解析中...'):
-            ai_result = analyze_receipt(upload_file)
+        with st.spinner(f'{selected_model} で解析中...'):
+            # 選ばれたモデル名を渡して解析
+            ai_result = analyze_receipt(upload_file, selected_model)
             
             if ai_result:
-                st.success("読み取り成功！下のフォームを確認してください。")
+                st.success("読み取り成功！")
                 try:
                     ai_date = datetime.datetime.strptime(ai_result.get('date', str(today)), '%Y-%m-%d').date()
                     ai_store = ai_result.get('store', '')
@@ -207,12 +222,12 @@ with st.sidebar:
                     ai_memo = f"{ai_store} {ai_memo_raw}".strip()
                     ai_amount = int(ai_result.get('amount', 0))
                 except:
-                    st.warning("一部データが読み取れませんでした。修正してください。")
+                    st.warning("一部のデータ修正が必要です")
 
     st.divider()
 
     # ==========================================
-    # 📝 入力フォーム (AIの結果を初期値に設定)
+    # 📝 入力フォーム
     # ==========================================
     st.subheader("2. 内容を確認して記録")
     
@@ -357,4 +372,3 @@ if not df_display.empty:
 
 else:
     st.info("データがありません。サイドバーから入力してください。")
-
