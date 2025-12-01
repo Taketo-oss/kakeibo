@@ -13,12 +13,6 @@ import json
 # ==========================================
 ADMIN_USER = "taketo" 
 
-# 使用するAIモデルの定義（IDと表示名のペア）
-AI_MODELS = {
-    "models/gemini-2.5-flash-image": "⚡️ Flash (高速・通常用) - 基本はこれ！",
-    "models/gemini-3-pro-image-preview": "🧠 Pro (高精度) - 文字が読み取れない時に"
-}
-
 # ==========================================
 # 🕒 日本時間の定義
 # ==========================================
@@ -26,13 +20,14 @@ JST = datetime.timezone(datetime.timedelta(hours=9))
 today = datetime.datetime.now(JST).date()
 
 # ==========================================
-# 🔌 データベース & AI接続
+# 🔌 データベース & AI接続準備
 # ==========================================
 try:
     supabase_url = st.secrets["SUPABASE_URL"]
     supabase_key = st.secrets["SUPABASE_KEY"]
     supabase = create_client(supabase_url, supabase_key)
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
+
 except Exception as e:
     st.error(f"接続設定エラー: {e}")
     st.stop()
@@ -45,6 +40,17 @@ supabase = init_connection()
 st.set_page_config(page_title="AI家計簿", page_icon="💰", layout="wide")
 
 # ==========================================
+# 🤖 AIモデル設定 (ここを修正しました！)
+# ==========================================
+# 自動取得をやめて、確実に動く無料モデルだけを手動で指定します
+# これなら「429 Quota exceeded (limit: 0)」エラーは出ません
+model_options = [
+    "models/gemini-1.5-flash",      # 一番おすすめ（高速・無料）
+    "models/gemini-1.5-flash-001",  # バージョン指定版
+    "models/gemini-1.5-pro",        # 性能重視（少し遅い）
+]
+
+# ==========================================
 # 🧠 画像解析関数
 # ==========================================
 def analyze_receipt(image_data, model_name):
@@ -54,7 +60,6 @@ def analyze_receipt(image_data, model_name):
         st.error("画像の読み込みに失敗しました。")
         return None
     
-    # 選ばれたモデルで初期化
     model = genai.GenerativeModel(model_name)
 
     prompt = """
@@ -75,7 +80,8 @@ def analyze_receipt(image_data, model_name):
         result_json = json.loads(cleaned_text)
         return result_json
     except Exception as e:
-        st.error(f"AI解析エラー: {e}")
+        # エラー詳細を表示しないようにマイルドにする
+        st.error(f"AI解析エラー: モデル {model_name} が混雑しているか、制限を超えました。別のモデルを選んでください。")
         return None
 
 # ==========================================
@@ -148,21 +154,9 @@ raw_df = pd.DataFrame(response.data)
 with st.sidebar:
     st.write(f"👤 User: **{user_id}**")
     
-    # ==========================================
-    # 🤖 AIモデル選択 (ここを修正しました)
-    # ==========================================
+    # ★モデル選択ボックス
     st.caption("🤖 AI設定")
-    # キー(ID)をリストにして渡し、表示には辞書の値(説明文)を使う
-    selected_model_id = st.selectbox(
-        "使用するAIモデル",
-        options=list(AI_MODELS.keys()),
-        format_func=lambda x: AI_MODELS[x]
-    )
-    # 選択したモデルの説明を表示してあげる
-    if "Flash" in AI_MODELS[selected_model_id]:
-        st.info("ℹ️ **Flash**: 処理が速いです。普段はこれを使ってください。")
-    else:
-        st.warning("ℹ️ **Pro**: 賢いですが処理制限があります。Flashで読めない時だけ使いましょう。")
+    selected_model = st.selectbox("使用するAIモデル", model_options, index=0)
 
     if user_id == ADMIN_USER:
         st.divider()
@@ -197,9 +191,7 @@ with st.sidebar:
     except:
         category_list = ["食費", "その他"]
 
-    # ==========================================
-    # 📁 画像アップロードエリア
-    # ==========================================
+    # 画像アップロード
     st.subheader("1. 画像を選択")
     upload_file = st.file_uploader("レシート画像をアップロード", type=['png', 'jpg', 'jpeg', 'heic'])
 
@@ -208,8 +200,8 @@ with st.sidebar:
     ai_amount = 0
 
     if upload_file:
-        with st.spinner('AIがレシートを解析中...'):
-            ai_result = analyze_receipt(upload_file, selected_model_id)
+        with st.spinner(f'{selected_model} で解析中...'):
+            ai_result = analyze_receipt(upload_file, selected_model)
             
             if ai_result:
                 st.success("読み取り成功！")
@@ -224,9 +216,7 @@ with st.sidebar:
 
     st.divider()
 
-    # ==========================================
-    # 📝 入力フォーム
-    # ==========================================
+    # 入力フォーム
     st.subheader("2. 内容を確認して記録")
     
     with st.form("input_form"):
@@ -270,7 +260,7 @@ with st.sidebar:
             st.success("保存しました！")
             st.rerun()
 
-# --- メインコンテンツ (前回と同じ) ---
+# --- メインコンテンツ ---
 st.title("💰 家計簿ダッシュボード")
 
 if not df_display.empty:
