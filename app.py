@@ -86,7 +86,7 @@ user_id = st.session_state['user_id']
 # 📱 メインアプリ画面
 # ==========================================
 
-# --- サイドバーは「ログアウト」と「管理者設定」だけにする ---
+# --- サイドバー ---
 with st.sidebar:
     st.write(f"👤 **{user_id}**")
     if st.button("ログアウト", type="primary"):
@@ -117,19 +117,18 @@ else:
     df_display = raw_df.copy()
 
 
-# --- メイン画面：タブで機能を切り替える ---
+# --- メイン画面：タブ構成を変更しました ---
 st.title("💰 家計簿アプリ")
 
-# ★ここが変更点！入力画面をメインのタブに持ってきました
-tab_input, tab_dash, tab_edit = st.tabs(["✏️ 入力", "📊 分析", "🔧 履歴・修正"])
+# ★ここが変更点！タブを4つに分けました
+tab_input, tab_dash, tab_history, tab_edit = st.tabs(["✏️ 入力", "📊 分析", "📝 履歴", "🔧 修正・削除"])
 
 # ==========================================
-# 1. 入力タブ (これで日付選択しても閉じません！)
+# 1. 入力タブ
 # ==========================================
 with tab_input:
     st.header("新規記録")
     
-    # カテゴリ取得
     try:
         cat_response = supabase.table('categories').select("name").execute()
         category_list = [item['name'] for item in cat_response.data]
@@ -212,26 +211,32 @@ with tab_dash:
         st.info("データがありません")
 
 # ==========================================
-# 3. 履歴・修正タブ
+# 3. 履歴タブ (見るだけ)
 # ==========================================
-with tab_edit:
-    st.header("履歴・修正")
+with tab_history:
+    st.header("📝 履歴一覧")
     if not df_display.empty:
-        # 一覧表示
         cols = ['date', 'category', 'memo', 'amount']
         if user_id == ADMIN_USER:
             cols.insert(0, 'user_id')
         st.dataframe(df_display[cols], use_container_width=True)
+    else:
+        st.info("データがありません")
 
-        st.divider()
-        st.subheader("データの修正・削除")
+# ==========================================
+# 4. 修正・削除タブ (直すところ)
+# ==========================================
+with tab_edit:
+    st.header("🔧 修正・削除")
+    if not df_display.empty:
+        st.caption("修正したいデータを選んでください")
         
         # 修正用UI
         edit_options = df_display.copy()
         edit_options['label'] = edit_options.apply(lambda x: f"{x['date'].strftime('%m/%d')} | {x['memo']} | ¥{x['amount']}", axis=1)
         
         selected_record_id = st.selectbox(
-            "修正するデータを選択",
+            "データ選択",
             edit_options['id'],
             format_func=lambda x: edit_options[edit_options['id'] == x]['label'].values[0]
         )
@@ -265,3 +270,5 @@ with tab_edit:
                 supabase.table('receipts').delete().eq('id', int(selected_record_id)).execute()
                 st.success("削除しました")
                 st.rerun()
+    else:
+        st.info("データがありません")
