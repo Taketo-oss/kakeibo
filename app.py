@@ -32,7 +32,7 @@ def init_connection():
 
 supabase = init_connection()
 
-st.set_page_config(page_title="家計簿アプリ", page_icon="💰", layout="wide")
+st.set_page_config(page_title="みんなの家計簿", page_icon="💰", layout="wide")
 
 # ==========================================
 # 🔐 ログイン・新規登録機能
@@ -122,14 +122,11 @@ with st.sidebar:
 
     if st.button("ログアウト"):
         del st.session_state['user_id']
-        for key in list(st.session_state.keys()):
-            del st.session_state[key]
         st.rerun()
         
     st.divider()
     st.header("✏️ 新規入力")
 
-    # カテゴリリスト取得
     try:
         cat_response = supabase.table('categories').select("name").execute()
         category_list = [item['name'] for item in cat_response.data]
@@ -137,9 +134,6 @@ with st.sidebar:
     except:
         category_list = ["食費", "その他"]
 
-    # ==========================================
-    # 📝 シンプルな入力フォーム
-    # ==========================================
     with st.form("input_form"):
         date = st.date_input("日付", today)
         selected_cat = st.selectbox("カテゴリ", category_list)
@@ -149,8 +143,7 @@ with st.sidebar:
             
         memo = st.text_input("メモ・店名", placeholder="例: コンビニ")
         amount = st.number_input("金額", min_value=0, step=100)
-        
-        submitted = st.form_submit_button("記録する", type="primary")
+        submitted = st.form_submit_button("記録する")
         
         if submitted:
             final_category = selected_cat
@@ -165,10 +158,6 @@ with st.sidebar:
                 else:
                     st.error("新カテゴリ名を入力してください")
                     st.stop()
-
-            if amount == 0:
-                st.warning("金額が0円です。")
-                st.stop()
 
             data = {
                 "user_id": user_id,
@@ -210,17 +199,22 @@ if not df_display.empty:
             
     with tab2:
         st.subheader("支出の推移")
+        # ★ここが新機能！表示モードの切り替え
         view_mode = st.radio("表示単位", ["日別", "週別", "月別"], horizontal=True)
+        
+        # データの加工 (Resample)
         df_chart = df_display.copy().set_index('date')
         
         if view_mode == "日別":
             chart_data = df_chart.resample('D')['amount'].sum().reset_index()
             title_text = "日々の支出"
         elif view_mode == "週別":
+            # 月曜始まりで集計
             chart_data = df_chart.resample('W-MON')['amount'].sum().reset_index()
             title_text = "週ごとの支出 (月曜始まり)"
-        else: 
+        else: # 月別
             chart_data = df_chart.resample('MS')['amount'].sum().reset_index()
+            # 月だけの表記にするためにフォーマット調整
             chart_data['date'] = chart_data['date'].dt.strftime('%Y-%m')
             title_text = "月ごとの支出"
 
