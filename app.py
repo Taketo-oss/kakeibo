@@ -3,6 +3,7 @@ from supabase import create_client, Client
 import pandas as pd
 import datetime
 import plotly.express as px
+import time # 時間待ちのために追加
 
 # ==========================================
 # ⚙️ 設定エリア
@@ -117,58 +118,76 @@ else:
     df_display = raw_df.copy()
 
 
-# --- メイン画面：タブ構成を変更しました ---
 st.title("💰 家計簿アプリ")
-
-# ★ここが変更点！タブを4つに分けました
 tab_input, tab_dash, tab_history, tab_edit = st.tabs(["✏️ 入力", "📊 分析", "📝 履歴", "🔧 修正・削除"])
 
 # ==========================================
-# 1. 入力タブ
+# 1. 入力タブ (カテゴリ選択を改善！)
 # ==========================================
 with tab_input:
     st.header("新規記録")
     
+    # カテゴリリスト取得
     try:
         cat_response = supabase.table('categories').select("name").execute()
         category_list = [item['name'] for item in cat_response.data]
-        category_list.append("➕ 新しいカテゴリを追加...")
     except:
         category_list = ["食費", "その他"]
 
+    # ★改善点：カテゴリの選び方を分かりやすく分離
+    # フォームの外に出すことで、ラジオボタンを切り替えた瞬間に表示を変えられます
+    st.caption("カテゴリ設定")
+    cat_mode = st.radio("カテゴリをどうする？", ["既存リストから選ぶ", "新しく追加する"], horizontal=True)
+
+    final_category = ""
+    
+    if cat_mode == "既存リストから選ぶ":
+        final_category = st.selectbox("カテゴリを選択", category_list)
+    else:
+        final_category = st.text_input("新しいカテゴリ名を入力", placeholder="例：推し活、猫の餌")
+        st.info("※入力して記録ボタンを押すと、自動でリストに追加されます")
+
+    # 入力フォーム
     with st.form("input_form"):
         col1, col2 = st.columns(2)
         date = col1.date_input("日付", today)
-        selected_cat = col2.selectbox("カテゴリ", category_list)
-        
-        if selected_cat == "➕ 新しいカテゴリを追加...":
-            st.info("下のメモ欄にカテゴリ名を入力")
-            
+        # 金額
+        amount = col2.number_input("金額", min_value=0, step=100)
+        # メモ
         memo = st.text_input("メモ・店名", placeholder="例: コンビニ")
-        amount = st.number_input("金額", min_value=0, step=100)
         
         submitted = st.form_submit_button("記録する", type="primary")
         
         if submitted:
-            final_category = selected_cat
-            if selected_cat == "➕ 新しいカテゴリを追加...":
-                if memo:
-                    final_category = memo
-                    try:
-                        supabase.table('categories').insert({"name": final_category}).execute()
-                    except:
-                        pass
-                else:
-                    st.error("カテゴリ名を入力してください")
-                    st.stop()
-
+            # バリデーション
+            if not final_category:
+                st.error("カテゴリが空です！入力または選択してください。")
+                st.stop()
+            
             if amount == 0:
-                st.warning("金額が0円です")
+                st.warning("金額が0円です。確認してください。")
                 st.stop()
 
-            data = {"user_id": user_id, "date": str(date), "category": final_category, "memo": memo, "amount": amount}
+            # 新規カテゴリならDBに追加しておく
+            if cat_mode == "新しく追加する":
+                try:
+                    supabase.table('categories').insert({"name": final_category}).execute()
+                except:
+                    pass # すでにある場合は無視
+
+            # レシート保存
+            data = {
+                "user_id": user_id,
+                "date": str(date),
+                "category": final_category,
+                "memo": memo,
+                "amount": amount
+            }
             supabase.table("receipts").insert(data).execute()
-            st.success("保存しました！")
+            
+            # ★改善点：完了メッセージを表示して少し待つ
+            st.success("✅ 記録しました！")
+            time.sleep(1) # 1秒待ってからリロード（メッセージを読ませるため）
             st.rerun()
 
 # ==========================================
@@ -179,7 +198,6 @@ with tab_dash:
     if not df_display.empty:
         df_display['date'] = pd.to_datetime(df_display['date'])
         
-        # 支出の推移
         st.subheader("支出の推移")
         view_mode = st.radio("表示単位", ["日別", "週別", "月別"], horizontal=True)
         df_chart = df_display.copy().set_index('date')
@@ -195,7 +213,6 @@ with tab_dash:
         fig_bar = px.bar(chart_data, x='date', y='amount')
         st.plotly_chart(fig_bar, use_container_width=True)
 
-        # カテゴリ分析
         st.divider()
         st.subheader("カテゴリ割合 (今月)")
         current_month = today.strftime("%Y-%m")
@@ -211,7 +228,7 @@ with tab_dash:
         st.info("データがありません")
 
 # ==========================================
-# 3. 履歴タブ (見るだけ)
+# 3. 履歴タブ
 # ==========================================
 with tab_history:
     st.header("📝 履歴一覧")
@@ -224,14 +241,13 @@ with tab_history:
         st.info("データがありません")
 
 # ==========================================
-# 4. 修正・削除タブ (直すところ)
+# 4. 修正・削除タブ
 # ==========================================
 with tab_edit:
     st.header("🔧 修正・削除")
     if not df_display.empty:
         st.caption("修正したいデータを選んでください")
         
-        # 修正用UI
         edit_options = df_display.copy()
         edit_options['label'] = edit_options.apply(lambda x: f"{x['date'].strftime('%m/%d')} | {x['memo']} | ¥{x['amount']}", axis=1)
         
@@ -247,9 +263,15 @@ with tab_edit:
             c1, c2 = st.columns(2)
             new_date = c1.date_input("日付", target_row['date'])
             
+            # カテゴリのインデックス合わせ
             cur_idx = 0
+            # リストになければ一時的に追加してインデックスを取得
             if target_row['category'] in category_list:
                 cur_idx = category_list.index(target_row['category'])
+            else:
+                category_list.append(target_row['category'])
+                cur_idx = len(category_list) - 1
+
             new_cat = c2.selectbox("カテゴリ", category_list, index=cur_idx)
             
             new_memo = st.text_input("メモ", target_row['memo'])
@@ -263,12 +285,14 @@ with tab_edit:
                     "memo": new_memo,
                     "amount": new_amount
                 }).eq('id', int(selected_record_id)).execute()
-                st.success("更新しました")
+                st.success("更新しました！")
+                time.sleep(1)
                 st.rerun()
 
             if btn_col2.form_submit_button("削除する", type="primary"):
                 supabase.table('receipts').delete().eq('id', int(selected_record_id)).execute()
-                st.success("削除しました")
+                st.success("削除しました！")
+                time.sleep(1)
                 st.rerun()
     else:
         st.info("データがありません")
