@@ -141,7 +141,7 @@ with tab_input:
 
     final_category = ""
     
-    if cat_mode == "既存リストから選ぶ":
+    if cat_mode == "既存リスト":
         final_category = st.selectbox("カテゴリを選択", category_list)
     else:
         final_category = st.text_input("新しいカテゴリ名を入力", placeholder="例：推し活、猫の餌")
@@ -296,4 +296,5 @@ with tab_edit:
                 st.rerun()
     else:
         st.info("データがありません")
+
 
