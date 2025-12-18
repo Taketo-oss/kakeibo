@@ -259,29 +259,30 @@ with tab_history:
         if not filtered_df.empty:
             filtered_df = filtered_df.sort_values('date', ascending=False)
             
-            for index, row in filtered_df.iterrows():
+           for index, row in filtered_df.iterrows():
                 icon = row['category'][0] if row['category'] else "💰"
                 date_str = row['date'].strftime('%Y.%m.%d')
                 
-                # ★修正：インデントを完全に削除して、HTMLとして正しく認識させる
+                # ★ここを修正：背景色と文字色をダークテーマに合わせました
                 html_code = f"""
-<div style="background-color: white; padding: 12px 10px; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; border-radius: 5px; color: #333;">
-<div style="display: flex; align-items: flex-start; gap: 10px;">
-<div style="background-color: #f8f9fa; width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; border: 1px solid #eee;">
-{icon}
-</div>
-<div>
-<div style="font-weight: bold; font-size: 0.95rem; color: #333;">{row['memo']}</div>
-<div style="font-size: 0.75rem; color: #888; margin-top:2px;">{date_str}</div>
-<span class="cat-tag">{row['category']}</span>
-</div>
-</div>
-<div style="text-align: right;">
-<div style="font-weight: bold; font-size: 1rem; color: #333;">¥{row['amount']:,}</div>
-</div>
+<div style="background-color: #1B263B; padding: 12px 10px; border-bottom: 1px solid #2B3A55; display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; border-radius: 8px; color: #E0E1DD;">
+    <div style="display: flex; align-items: flex-start; gap: 12px;">
+        <div style="background-color: #2B3A55; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; border: 1px solid #3E4C63;">
+            {icon}
+        </div>
+        <div>
+            <div style="font-weight: bold; font-size: 0.95rem; color: #FFFFFF;">{row['memo']}</div>
+            <div style="font-size: 0.75rem; color: #8E9AAF; margin-top:2px;">{date_str}</div>
+            <span class="cat-tag">{row['category']}</span>
+        </div>
+    </div>
+    <div style="text-align: right;">
+        <div style="font-weight: bold; font-size: 1.1rem; color: #4DA6FF;">¥{row['amount']:,}</div>
+    </div>
 </div>
 """
                 st.markdown(html_code, unsafe_allow_html=True)
+
         else:
             st.caption("見つかりません")
     else:
@@ -338,6 +339,7 @@ with tab_edit:
                 st.rerun()
     else:
         st.info("データなし")
+
 
 
 
