@@ -1,16 +1,16 @@
 [theme]
 base = "light"
 
-# メインカラー（ミントグリーン）
-primaryColor = "#2bd698"
+# メインカラー（nani.nowのロゴのような鮮やかなスカイブルー）
+primaryColor = "#4DA6FF"
 
-# 背景色
-# まぶしくないように、ほんの少しグレーを混ぜた「ペールミントグレー」にしました
-backgroundColor = "#F2F5F4"
+# 背景色（ごく薄い水色）
+# これでアプリ全体がnani.nowのような「空」の雰囲気になります
+backgroundColor = "#F2F8FF"
 
-# サイドバーなどの背景色
-# 背景より少しだけ濃くして、境界をわかりやすく
-secondaryBackgroundColor = "#E3EBE8"
+# サイドバーや入力エリア（真っ白）
+# 背景の水色に対して、ここを白にすることで「カード」のように浮き上がらせます
+secondaryBackgroundColor = "#FFFFFF"
 
-# 文字色
-textColor = "#384242"
+# 文字色（読みやすいダークグレー）
+textColor = "#333333"
