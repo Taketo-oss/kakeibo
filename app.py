@@ -34,6 +34,34 @@ supabase = init_connection()
 
 st.set_page_config(page_title="家計簿アプリ", page_icon="💰", layout="wide")
 
+# --- 🎨 sizu.me風のカスタムCSS (余計な装飾を消してシンプルにする) ---
+st.markdown("""
+<style>
+    /* 全体のフォントを少し柔らかく */
+    html, body, [class*="css"] {
+        font-family: "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif;
+    }
+    /* ヘッダーの装飾ラインを隠す */
+    header {visibility: hidden;}
+    /* フッターを隠す */
+    footer {visibility: hidden;}
+    /* タブのデザインをシンプルに */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 20px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 50px;
+        white-space: pre-wrap;
+        background-color: transparent;
+        border-radius: 5px;
+        padding: 0 20px;
+        font-weight: bold;
+    }
+    /* 選択されたタブの下線を消して、文字色を変えるだけにしたいがStreamlitの制限で難しいので
+       せめて余白を綺麗に調整 */
+</style>
+""", unsafe_allow_html=True)
+
 # ==========================================
 # 🔐 ログイン機能
 # ==========================================
@@ -94,27 +122,18 @@ with st.sidebar:
         del st.session_state['user_id']
         st.rerun()
 
-# データの取得（ゴミ箱機能の実装）
+# データ取得
 df_display = pd.DataFrame() 
-
-# フィルタリング設定
 show_deleted = False
 
-# 管理者だけが「削除済み」を見られるようにする
 if user_id == ADMIN_USER:
     st.sidebar.divider()
     st.sidebar.caption("👑 管理者メニュー")
+    show_deleted = st.sidebar.checkbox("🗑️ 削除済を表示")
     
-    # 削除済みデータを見るチェックボックス
-    show_deleted = st.sidebar.checkbox("🗑️ 削除済みの履歴を見る")
-    
-    # 全ユーザーデータの取得
     if show_deleted:
-        # 削除されたものだけ取得 (deleted_at が null じゃない)
         response = supabase.table('receipts').select("*").not_.is_('deleted_at', 'null').order('deleted_at', desc=True).execute()
-        st.warning("⚠️ 現在、削除されたデータを表示しています")
     else:
-        # 生きているデータだけ取得 (deleted_at が null)
         response = supabase.table('receipts').select("*").is_('deleted_at', 'null').order('date', desc=True).execute()
     
     raw_df = pd.DataFrame(response.data)
@@ -131,14 +150,13 @@ if user_id == ADMIN_USER:
         df_display = raw_df.copy()
 
 else:
-    # 一般ユーザーは自分の「生きている」データだけ
     response = supabase.table('receipts').select("*").eq('user_id', user_id).is_('deleted_at', 'null').order('date', desc=True).execute()
     raw_df = pd.DataFrame(response.data)
     df_display = raw_df.copy()
 
 
 st.title("💰 家計簿アプリ")
-tab_input, tab_dash, tab_history, tab_edit = st.tabs(["✏️ 入力", "📊 分析", "📝 履歴", "🔧 修正・削除"])
+tab_input, tab_dash, tab_history, tab_edit = st.tabs(["✏️ 入力", "📊 分析", "📝 ログ", "🔧 修正"])
 
 # ==========================================
 # 1. 入力タブ
@@ -146,13 +164,24 @@ tab_input, tab_dash, tab_history, tab_edit = st.tabs(["✏️ 入力", "📊 分
 with tab_input:
     st.header("✏️ 新規記録")
 
-    # 今月の出費表示
+    # 今月の出費表示（シンプルに）
     if not df_display.empty and not show_deleted:
         try:
             current_month_str = today.strftime("%Y-%m")
             df_display['date'] = pd.to_datetime(df_display['date'])
-            this_month_total = df_display[df_display['date'].dt.strftime('%Y-%m') == current_month_str]['amount'].sum()
-            st.metric(label=f"{today.month}月の支出合計", value=f"¥{this_month_total:,}")
+            
+            # 今月と先月の計算
+            this_month = df_display[df_display['date'].dt.strftime('%Y-%m') == current_month_str]['amount'].sum()
+            last_month_str = (today.replace(day=1) - datetime.timedelta(days=1)).strftime("%Y-%m")
+            last_month = df_display[df_display['date'].dt.strftime('%Y-%m') == last_month_str]['amount'].sum()
+            diff = this_month - last_month
+
+            st.metric(
+                label=f"📅 {today.month}月の支出",
+                value=f"¥{this_month:,}",
+                delta=f"{diff:,}円 (先月比)",
+                delta_color="inverse"
+            )
             st.divider()
         except:
             pass
@@ -164,14 +193,8 @@ with tab_input:
     except:
         category_list = ["食費", "その他"]
 
-    # カテゴリモード
-    cat_mode = st.radio(
-        "カテゴリモード", 
-        ["既存リスト", "カテゴリ追加"], 
-        horizontal=True,
-        label_visibility="collapsed"
-    )
-
+    # カテゴリ選択
+    cat_mode = st.radio("カテゴリモード", ["既存リスト", "カテゴリ追加"], horizontal=True, label_visibility="collapsed")
     final_category = ""
     
     if cat_mode == "既存リスト":
@@ -192,32 +215,23 @@ with tab_input:
         
         if submitted:
             if show_deleted:
-                st.error("削除済みデータ表示中は記録できません。チェックを外してください。")
+                st.error("削除済みデータ表示中は記録できません。")
                 st.stop()
-                
             if not final_category:
                 st.error("カテゴリを入力してください")
                 st.stop()
-            
             if amount == 0:
                 st.warning("金額が0円です")
                 st.stop()
 
-            # 新規カテゴリならDBに追加
+            # 新規カテゴリ追加
             if cat_mode == "カテゴリ追加":
                 try:
                     supabase.table('categories').insert({"name": final_category}).execute()
                 except:
                     pass
 
-            # レシート保存
-            data = {
-                "user_id": user_id,
-                "date": str(date),
-                "category": final_category,
-                "memo": memo,
-                "amount": amount
-            }
+            data = {"user_id": user_id, "date": str(date), "category": final_category, "memo": memo, "amount": amount}
             supabase.table("receipts").insert(data).execute()
             
             st.toast("✅ 記録しました！", icon="🎉")
@@ -226,69 +240,98 @@ with tab_input:
             st.rerun()
 
 # ==========================================
-# 2. 分析タブ
+# 2. 分析タブ (catnose風 シンプルカード)
 # ==========================================
 with tab_dash:
-    st.header("ダッシュボード")
+    st.header("📊 ダッシュボード")
     if not df_display.empty:
         df_display['date'] = pd.to_datetime(df_display['date'])
         
-        st.subheader("支出の推移")
-        view_mode = st.radio("表示単位", ["日別", "週別", "月別"], horizontal=True)
-        df_chart = df_display.copy().set_index('date')
-        
-        if view_mode == "日別":
-            chart_data = df_chart.resample('D')['amount'].sum().reset_index()
-        elif view_mode == "週別":
-            chart_data = df_chart.resample('W-MON')['amount'].sum().reset_index()
-        else: 
-            chart_data = df_chart.resample('MS')['amount'].sum().reset_index()
-            chart_data['date'] = chart_data['date'].dt.strftime('%Y-%m')
-
-        fig_bar = px.bar(chart_data, x='date', y='amount')
-        st.plotly_chart(fig_bar, use_container_width=True)
+        # グラフエリア
+        c1, c2 = st.columns(2)
+        with c1:
+            st.caption("📈 日々の推移")
+            chart_data = df_display.copy().set_index('date').resample('D')['amount'].sum().reset_index()
+            fig_bar = px.bar(chart_data, x='date', y='amount')
+            fig_bar.update_layout(xaxis_title=None, yaxis_title=None, showlegend=False, margin=dict(l=0, r=0, t=0, b=0))
+            st.plotly_chart(fig_bar, use_container_width=True)
+            
+        with c2:
+            st.caption("🍰 カテゴリ割合")
+            current_month = today.strftime("%Y-%m")
+            df_this_month = df_display[df_display['date'].dt.strftime('%Y-%m') == current_month]
+            if not df_this_month.empty:
+                fig_pie = px.pie(df_this_month, values='amount', names='category', hole=0.4)
+                fig_pie.update_layout(showlegend=False, margin=dict(l=0, r=0, t=0, b=0))
+                st.plotly_chart(fig_pie, use_container_width=True)
+            else:
+                st.info("今月のデータなし")
 
         st.divider()
-        st.subheader("カテゴリ割合")
-        current_month = today.strftime("%Y-%m")
-        df_this_month = df_display[df_display['date'].dt.strftime('%Y-%m') == current_month]
+
+        # --- nani.now風 タイムライン表示 ---
+        st.subheader("🕒 最近の記録")
         
-        if not df_this_month.empty:
-            fig_pie = px.pie(df_this_month, values='amount', names='category')
-            st.plotly_chart(fig_pie, use_container_width=True)
-            st.metric("今月の合計", f"¥{df_this_month['amount'].sum():,}")
-        else:
-            st.info("今月のデータなし")
+        recent_data = df_display.sort_values('date', ascending=False).head(5)
+        for index, row in recent_data.iterrows():
+            with st.container(border=True):
+                c_left, c_right = st.columns([3, 1])
+                with c_left:
+                    # カテゴリの頭文字をアイコン化
+                    icon = row['category'][0] if row['category'] else "💰"
+                    st.markdown(f"**{icon} {row['memo']}**")
+                    st.caption(f"{row['date'].strftime('%Y/%m/%d')} | {row['category']}")
+                with c_right:
+                    st.markdown(f"<div style='text-align: right; font-weight: bold;'>¥{row['amount']:,}</div>", unsafe_allow_html=True)
     else:
         st.info("データがありません")
 
 # ==========================================
-# 3. 履歴タブ
+# 3. ログ（履歴）タブ (nani.now風 タイムライン)
 # ==========================================
 with tab_history:
-    st.header("📝 履歴一覧")
-    if not df_display.empty:
-        cols = ['date', 'category', 'memo', 'amount']
-        if user_id == ADMIN_USER:
-            cols.insert(0, 'user_id')
-        
-        # 削除済みデータなら削除日時も表示
-        if show_deleted and 'deleted_at' in df_display.columns:
-            cols.append('deleted_at')
+    st.header("📝 支出ログ")
+    st.caption("日々の記録")
 
-        st.dataframe(
-            df_display[cols], 
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "date": st.column_config.DateColumn("日付", format="YYYY/MM/DD"),
-                "category": st.column_config.TextColumn("カテゴリ"),
-                "memo": st.column_config.TextColumn("メモ"),
-                "amount": st.column_config.NumberColumn("金額", format="¥%d"),
-                "user_id": st.column_config.TextColumn("ユーザー"),
-                "deleted_at": st.column_config.DatetimeColumn("削除日時", format="MM/DD HH:mm"),
-            }
-        )
+    if not df_display.empty:
+        # 日付でグループ化して表示する（これが nani.now のポイント！）
+        df_display['date_str'] = df_display['date'].dt.strftime('%Y-%m-%d')
+        
+        # 日付ごとにデータをまとめる
+        grouped = df_display.groupby('date_str')
+        
+        # 日付の降順（新しい順）でループ
+        sorted_dates = sorted(df_display['date_str'].unique(), reverse=True)
+        
+        for date_key in sorted_dates:
+            group_data = grouped.get_group(date_key)
+            
+            # --- 日付ヘッダー ---
+            # "2023-12-18 (Mon)" のように表示
+            day_obj = datetime.datetime.strptime(date_key, '%Y-%m-%d')
+            weekday = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][day_obj.weekday()]
+            
+            st.markdown(f"##### {date_key} <span style='color:gray; font-weight:normal; font-size:0.8em;'>({weekday})</span>", unsafe_allow_html=True)
+            
+            # その日のデータをリスト表示
+            for idx, row in group_data.iterrows():
+                # シンプルな行表示
+                # 左: カテゴリとメモ、 右: 金額
+                
+                # アイコン作成
+                icon = row['category'][0] if row['category'] else "💰"
+                
+                col_main, col_amount = st.columns([4, 1])
+                
+                with col_main:
+                    st.markdown(f"{icon} **{row['memo']}** <span style='color:gray; font-size:0.8em;'>({row['category']})</span>", unsafe_allow_html=True)
+                
+                with col_amount:
+                    st.markdown(f"¥{row['amount']:,}")
+            
+            # 日付ごとの区切り線（薄く）
+            st.markdown("<hr style='margin: 0.5em 0; opacity: 0.3;'>", unsafe_allow_html=True)
+
     else:
         st.info("データがありません")
 
@@ -297,12 +340,10 @@ with tab_history:
 # ==========================================
 with tab_edit:
     st.header("🔧 修正・削除")
-    
     if show_deleted:
-        st.warning("現在、削除済みデータを表示しているため、修正・削除はできません。")
+        st.warning("削除済みデータ表示中は操作できません")
     elif not df_display.empty:
         st.caption("修正したいデータを選んでください")
-        
         edit_options = df_display.copy()
         edit_options['label'] = edit_options.apply(lambda x: f"{x['date'].strftime('%m/%d')} | {x['memo']} | ¥{x['amount']}", axis=1)
         
@@ -311,7 +352,6 @@ with tab_edit:
             edit_options['id'],
             format_func=lambda x: edit_options[edit_options['id'] == x]['label'].values[0]
         )
-
         target_row = df_display[df_display['id'] == selected_record_id].iloc[0]
 
         with st.form("edit_form"):
@@ -326,7 +366,6 @@ with tab_edit:
                 cur_idx = len(category_list) - 1
 
             new_cat = c2.selectbox("カテゴリ", category_list, index=cur_idx)
-            
             new_memo = st.text_input("メモ", target_row['memo'])
             new_amount = st.number_input("金額", value=target_row['amount'], step=100)
 
@@ -342,15 +381,10 @@ with tab_edit:
                 time.sleep(1)
                 st.rerun()
 
-            # ★ここが重要：物理削除ではなく、論理削除（deleted_atを入れる）にする
             if btn_col2.form_submit_button("削除する", type="primary"):
-                # 削除日時を現在時刻で更新
                 now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
-                supabase.table('receipts').update({
-                    "deleted_at": now_iso
-                }).eq('id', int(selected_record_id)).execute()
-                
-                st.success("ゴミ箱に移動しました！（管理者は後で確認できます）")
+                supabase.table('receipts').update({"deleted_at": now_iso}).eq('id', int(selected_record_id)).execute()
+                st.success("ゴミ箱に移動しました！")
                 time.sleep(1)
                 st.rerun()
     else:
