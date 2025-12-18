@@ -2,15 +2,15 @@
 base = "light"
 
 # メインカラー（ミントグリーン）
-# ボタンや選択時のアクセント色です
 primaryColor = "#2bd698"
 
-# 背景色（真っ白）
-backgroundColor = "#FFFFFF"
+# 背景色
+# まぶしくないように、ほんの少しグレーを混ぜた「ペールミントグレー」にしました
+backgroundColor = "#F2F5F4"
 
-# サイドバーや入力欄の背景（ほんのりミントがかった薄いグレー）
-# ここが目に優しいポイントです
-secondaryBackgroundColor = "#F0F8F7"
+# サイドバーなどの背景色
+# 背景より少しだけ濃くして、境界をわかりやすく
+secondaryBackgroundColor = "#E3EBE8"
 
-# 文字色（真っ黒ではなく、少し柔らかいダークグレー）
+# 文字色
 textColor = "#384242"
