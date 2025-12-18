@@ -1,16 +1,15 @@
 [theme]
-base = "light"
+base = "dark" # ここをdarkにすることで、全体を暗め設定にします
 
-# メインカラー（nani.nowのロゴのような鮮やかなスカイブルー）
+# メインカラー（鮮やかなスカイブルー）
 primaryColor = "#4DA6FF"
 
-# 背景色（ごく薄い水色）
-# これでアプリ全体がnani.nowのような「空」の雰囲気になります
-backgroundColor = "#F2F8FF"
+# 背景色（深みのある濃い紺色）
+# 真っ黒ではなく青みを強くすることで、オシャレさと目に優しさを両立させます
+backgroundColor = "#0D1B2A"
 
-# サイドバーや入力エリア（真っ白）
-# 背景の水色に対して、ここを白にすることで「カード」のように浮き上がらせます
-secondaryBackgroundColor = "#FFFFFF"
+# サイドバーや入力エリア（背景より少し明るい青）
+secondaryBackgroundColor = "#1B263B"
 
-# 文字色（読みやすいダークグレー）
-textColor = "#333333"
+# 文字色（真っ白だとまぶしいため、少しだけ青みを入れた白）
+textColor = "#E0E1DD"
