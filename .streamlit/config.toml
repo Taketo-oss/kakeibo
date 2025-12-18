@@ -3,10 +3,10 @@ base = "light"
 
 # メインカラー（ミントグリーン）
 # ボタンや選択時のアクセント色です
-primaryColor = "#2bd698"
+primaryColor = "#384242"
 
 # 背景色（真っ白）
-backgroundColor = "#FFFFFF"
+backgroundColor = "#2bd698"
 
 # サイドバーや入力欄の背景（ほんのりミントがかった薄いグレー）
 # ここが目に優しいポイントです
