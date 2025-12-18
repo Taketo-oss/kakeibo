@@ -3,7 +3,7 @@ from supabase import create_client, Client
 import pandas as pd
 import datetime
 import plotly.express as px
-import time # 時間待ちのために追加
+import time
 
 # ==========================================
 # ⚙️ 設定エリア
@@ -122,7 +122,7 @@ st.title("💰 家計簿アプリ")
 tab_input, tab_dash, tab_history, tab_edit = st.tabs(["✏️ 入力", "📊 分析", "📝 履歴", "🔧 修正・削除"])
 
 # ==========================================
-# 1. 入力タブ (カテゴリ選択を改善！)
+# 1. 入力タブ (カテゴリ選択をシンプルに！)
 # ==========================================
 with tab_input:
     st.header("新規記録")
@@ -134,46 +134,46 @@ with tab_input:
     except:
         category_list = ["食費", "その他"]
 
-    # ★改善点：カテゴリの選び方を分かりやすく分離
-    # フォームの外に出すことで、ラジオボタンを切り替えた瞬間に表示を変えられます
-    st.caption("カテゴリ設定")
-    cat_mode = st.radio( ["既存リスト", "新しく追加"], horizontal=True)
+    # ★改善点：ラベルを消して、選択肢をシンプルに変更
+    cat_mode = st.radio(
+        "カテゴリモード",  # 内部的な名前（label_visibility="collapsed"で見えなくなる）
+        ["既存リスト", "カテゴリ追加"], 
+        horizontal=True,
+        label_visibility="collapsed" # これで「カテゴリをどうする？」的な文字を消します
+    )
 
     final_category = ""
     
     if cat_mode == "既存リスト":
         final_category = st.selectbox("カテゴリを選択", category_list)
     else:
-        final_category = st.text_input("新しいカテゴリ名を入力", placeholder="例：推し活、猫の餌")
-        st.info("※入力して記録ボタンを押すと、自動でリストに追加されます")
+        final_category = st.text_input("新しいカテゴリ名", placeholder="例：推し活")
+        st.info("※入力して記録するとリストに追加されます")
 
     # 入力フォーム
     with st.form("input_form"):
         col1, col2 = st.columns(2)
         date = col1.date_input("日付", today)
-        # 金額
         amount = col2.number_input("金額", min_value=0, step=100)
-        # メモ
         memo = st.text_input("メモ・店名", placeholder="例: コンビニ")
         
         submitted = st.form_submit_button("記録する", type="primary")
         
         if submitted:
-            # バリデーション
             if not final_category:
-                st.error("カテゴリが空です！入力または選択してください。")
+                st.error("カテゴリを入力してください")
                 st.stop()
             
             if amount == 0:
-                st.warning("金額が0円です。確認してください。")
+                st.warning("金額が0円です")
                 st.stop()
 
-            # 新規カテゴリならDBに追加しておく
-            if cat_mode == "新しく追加する":
+            # 新規カテゴリならDBに追加
+            if cat_mode == "カテゴリ追加":
                 try:
                     supabase.table('categories').insert({"name": final_category}).execute()
                 except:
-                    pass # すでにある場合は無視
+                    pass
 
             # レシート保存
             data = {
@@ -185,9 +185,8 @@ with tab_input:
             }
             supabase.table("receipts").insert(data).execute()
             
-            # ★改善点：完了メッセージを表示して少し待つ
             st.success("✅ 記録しました！")
-            time.sleep(1) # 1秒待ってからリロード（メッセージを読ませるため）
+            time.sleep(1)
             st.rerun()
 
 # ==========================================
@@ -263,9 +262,7 @@ with tab_edit:
             c1, c2 = st.columns(2)
             new_date = c1.date_input("日付", target_row['date'])
             
-            # カテゴリのインデックス合わせ
             cur_idx = 0
-            # リストになければ一時的に追加してインデックスを取得
             if target_row['category'] in category_list:
                 cur_idx = category_list.index(target_row['category'])
             else:
@@ -296,5 +293,3 @@ with tab_edit:
                 st.rerun()
     else:
         st.info("データがありません")
-
-
