@@ -1,0 +1,16 @@
+[theme]
+# 基本のテーマを「ライト（白）」にする
+base = "light"
+
+# メインカラー（ボタンやアクセントの色）
+# ここを変えるとアプリの雰囲気が変わります。好きな色を選んでください
+primaryColor = "#F63366"  
+
+# 背景色（真っ白）
+backgroundColor = "#FFFFFF"
+
+# サイドバーや入力欄の背景色（ほんのりグレーで差をつける）
+secondaryBackgroundColor = "#F0F2F6" 
+
+# 文字の色（真っ黒すぎないグレーで目に優しく）
+textColor = "#31333F"
