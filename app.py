@@ -32,40 +32,18 @@ def init_connection():
 
 supabase = init_connection()
 
-# ★修正：initial_sidebar_state="expanded" にして、最初からサイドバーを開くようにしました
+# サイドバー設定
 st.set_page_config(page_title="家計簿", page_icon="💰", layout="wide", initial_sidebar_state="expanded")
 
-# --- 📱 marumie風CSS ---
+# --- 📱 シンプルなCSS（余計なことはしない） ---
 st.markdown("""
 <style>
-    /* 全体のフォント調整 */
-    html, body, [class*="css"] {
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    }
-    .block-container {
-        padding-top: 1rem;
-        padding-bottom: 5rem;
-    }
-    
-    /* ★修正：header {visibility: hidden;} を削除しました。これでサイドバーのボタンが見えます */
-    footer {visibility: hidden;}
-    
-    /* タブのデザイン */
-    .stTabs [data-baseweb="tab"] {
-        flex-grow: 1;
-        justify-content: center;
-        padding: 10px 0;
-        font-size: 0.9rem;
-        font-weight: 600;
-        color: #555;
-    }
-    
-    /* カテゴリタグのデザイン */
+    /* カテゴリタグのデザインのみ定義 */
     .cat-tag {
         display: inline-block;
         padding: 2px 8px;
         border-radius: 12px;
-        font-size: 0.7rem;
+        font-size: 0.75rem;
         font-weight: bold;
         background-color: #f0f2f6;
         color: #555;
@@ -118,7 +96,7 @@ user_id = st.session_state['user_id']
 df_display = pd.DataFrame() 
 show_deleted = False
 
-# サイドバーの内容
+# サイドバー
 with st.sidebar:
     st.write(f"👤 **{user_id}**")
     
@@ -127,7 +105,6 @@ with st.sidebar:
         st.caption("👑 管理者メニュー")
         show_deleted = st.checkbox("🗑️ 削除済を表示")
         
-        # データ取得ロジック
         if show_deleted:
             response = supabase.table('receipts').select("*").not_.is_('deleted_at', 'null').order('deleted_at', desc=True).execute()
         else:
@@ -161,6 +138,10 @@ with st.sidebar:
 # ==========================================
 # 📱 メインコンテンツ
 # ==========================================
+# タイトル
+st.subheader("💰 家計簿アプリ")
+
+# ★タブを確実に表示させる
 tab_input, tab_dash, tab_history, tab_edit = st.tabs(["✏️ 入力", "📊 分析", "📝 ログ", "🔧 修正"])
 
 # ------------------------------------------
@@ -276,21 +257,22 @@ with tab_history:
                 icon = row['category'][0] if row['category'] else "💰"
                 date_str = row['date'].strftime('%Y.%m.%d')
                 
+                # ★修正：インデントを完全に削除して、HTMLとして正しく認識させる
                 html_code = f"""
-<div style="background-color: white; padding: 12px 10px; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px;">
-    <div style="display: flex; align-items: flex-start; gap: 10px;">
-        <div style="background-color: #f8f9fa; width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; border: 1px solid #eee;">
-            {icon}
-        </div>
-        <div>
-            <div style="font-weight: bold; font-size: 0.95rem; color: #333;">{row['memo']}</div>
-            <div style="font-size: 0.75rem; color: #888; margin-top:2px;">{date_str}</div>
-            <span class="cat-tag">{row['category']}</span>
-        </div>
-    </div>
-    <div style="text-align: right;">
-        <div style="font-weight: bold; font-size: 1rem; color: #333;">¥{row['amount']:,}</div>
-    </div>
+<div style="background-color: white; padding: 12px 10px; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; border-radius: 5px; color: #333;">
+<div style="display: flex; align-items: flex-start; gap: 10px;">
+<div style="background-color: #f8f9fa; width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; border: 1px solid #eee;">
+{icon}
+</div>
+<div>
+<div style="font-weight: bold; font-size: 0.95rem; color: #333;">{row['memo']}</div>
+<div style="font-size: 0.75rem; color: #888; margin-top:2px;">{date_str}</div>
+<span class="cat-tag">{row['category']}</span>
+</div>
+</div>
+<div style="text-align: right;">
+<div style="font-weight: bold; font-size: 1rem; color: #333;">¥{row['amount']:,}</div>
+</div>
 </div>
 """
                 st.markdown(html_code, unsafe_allow_html=True)
