@@ -38,16 +38,16 @@ st.set_page_config(page_title="家計簿", page_icon="💰", layout="wide", init
 # --- 📱 シンプルなCSS（余計なことはしない） ---
 st.markdown("""
 <style>
-   /* カテゴリタグのデザインのみ定義 */
+    /* カテゴリタグのデザイン（nani.now風のブルーアクセント） */
     .cat-tag {
         display: inline-block;
         padding: 2px 8px;
-        border-radius: 12px;
+        border-radius: 6px;       /* 角を少し丸く */
         font-size: 0.75rem;
         font-weight: bold;
-        background-color: #e6fcf5; /* 薄いミント背景 */
-        color: #0ca678;            /* 濃いミント文字 */
-        border: 1px solid #c3fae8; /* 枠線もミント */
+        background-color: #E6F4FF; /* 薄い水色の背景 */
+        color: #0066CC;            /* 濃い青色の文字 */
+        border: 1px solid #CCE5FF; /* 枠線も薄い青 */
         margin-top: 4px;
     }
 </style>
@@ -332,4 +332,5 @@ with tab_edit:
                 st.rerun()
     else:
         st.info("データなし")
+
 
