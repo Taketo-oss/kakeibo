@@ -35,20 +35,26 @@ supabase = init_connection()
 # サイドバー設定
 st.set_page_config(page_title="家計簿", page_icon="💰", layout="wide", initial_sidebar_state="expanded")
 
-# --- 📱 シンプルなCSS（余計なことはしない） ---
+# --- 📱 CSS（余計なことはしない） ---
 st.markdown("""
 <style>
-    /* カテゴリタグのデザイン（nani.now風のブルーアクセント） */
+    /* カテゴリタグのデザイン（ダークブルー背景用） */
     .cat-tag {
         display: inline-block;
-        padding: 2px 8px;
-        border-radius: 6px;       /* 角を少し丸く */
+        padding: 2px 10px;
+        border-radius: 6px;
         font-size: 0.75rem;
         font-weight: bold;
-        background-color: #E6F4FF; /* 薄い水色の背景 */
-        color: #0066CC;            /* 濃い青色の文字 */
-        border: 1px solid #CCE5FF; /* 枠線も薄い青 */
+        /* 背景を少し透過させた水色に */
+        background-color: rgba(77, 166, 255, 0.2); 
+        color: #8ECAFF;            /* 明るい水色の文字 */
+        border: 1px solid rgba(77, 166, 255, 0.3);
         margin-top: 4px;
+    }
+    
+    /* 入力フォームのラベルを見やすく */
+    .stMarkdown p {
+        color: #E0E1DD;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -332,5 +338,6 @@ with tab_edit:
                 st.rerun()
     else:
         st.info("データなし")
+
 
 
