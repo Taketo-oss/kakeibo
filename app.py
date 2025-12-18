@@ -137,7 +137,7 @@ with tab_input:
     # ★改善点：カテゴリの選び方を分かりやすく分離
     # フォームの外に出すことで、ラジオボタンを切り替えた瞬間に表示を変えられます
     st.caption("カテゴリ設定")
-    cat_mode = st.radio("カテゴリをどうする？", ["既存リストから選ぶ", "新しく追加する"], horizontal=True)
+    cat_mode = st.radio( ["既存リスト", "新しく追加"], horizontal=True)
 
     final_category = ""
     
@@ -296,3 +296,4 @@ with tab_edit:
                 st.rerun()
     else:
         st.info("データがありません")
+
