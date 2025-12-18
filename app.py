@@ -32,8 +32,8 @@ def init_connection():
 
 supabase = init_connection()
 
-# サイドバーを最初から少し見える状態に戻す (auto)
-st.set_page_config(page_title="家計簿", page_icon="💰", layout="wide", initial_sidebar_state="auto")
+# ★修正：initial_sidebar_state="expanded" にして、最初からサイドバーを開くようにしました
+st.set_page_config(page_title="家計簿", page_icon="💰", layout="wide", initial_sidebar_state="expanded")
 
 # --- 📱 marumie風CSS ---
 st.markdown("""
@@ -46,7 +46,9 @@ st.markdown("""
         padding-top: 1rem;
         padding-bottom: 5rem;
     }
-    header, footer {visibility: hidden;}
+    
+    /* ★修正：header {visibility: hidden;} を削除しました。これでサイドバーのボタンが見えます */
+    footer {visibility: hidden;}
     
     /* タブのデザイン */
     .stTabs [data-baseweb="tab"] {
@@ -116,7 +118,7 @@ user_id = st.session_state['user_id']
 df_display = pd.DataFrame() 
 show_deleted = False
 
-# ★修正：管理者メニューをサイドバーに戻しました
+# サイドバーの内容
 with st.sidebar:
     st.write(f"👤 **{user_id}**")
     
@@ -242,12 +244,11 @@ with tab_dash:
         st.info("データなし")
 
 # ------------------------------------------
-# 3. ログ（履歴）タブ - marumie風デザイン
+# 3. ログ（履歴）タブ
 # ------------------------------------------
 with tab_history:
     if not df_display.empty:
         
-        # 検索機能
         with st.container():
             f_col1, f_col2 = st.columns([2, 1])
             search_query = f_col1.text_input("🔍 キーワード", placeholder="検索...")
@@ -259,7 +260,6 @@ with tab_history:
 
         st.markdown("<hr style='margin: 0.5em 0 1em 0; opacity:0.2;'>", unsafe_allow_html=True)
         
-        # フィルタリング
         filtered_df = df_display.copy()
         if selected_month != "全期間":
             filtered_df = filtered_df[filtered_df['month_str'] == selected_month]
@@ -276,7 +276,6 @@ with tab_history:
                 icon = row['category'][0] if row['category'] else "💰"
                 date_str = row['date'].strftime('%Y.%m.%d')
                 
-                # ★修正ポイント：HTML生成時にインデント（空白）を削除しました。これでコードブロックになりません。
                 html_code = f"""
 <div style="background-color: white; padding: 12px 10px; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px;">
     <div style="display: flex; align-items: flex-start; gap: 10px;">
