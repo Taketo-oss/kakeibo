@@ -32,21 +32,21 @@ def init_connection():
 
 supabase = init_connection()
 
-st.set_page_config(page_title="家計簿", page_icon="💰", layout="wide", initial_sidebar_state="collapsed")
+# サイドバーを最初から少し見える状態に戻す (auto)
+st.set_page_config(page_title="家計簿", page_icon="💰", layout="wide", initial_sidebar_state="auto")
 
-# --- 📱 marumie風 & スマホ最適化CSS ---
+# --- 📱 marumie風CSS ---
 st.markdown("""
 <style>
     /* 全体のフォント調整 */
     html, body, [class*="css"] {
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-        color: #333;
     }
     .block-container {
         padding-top: 1rem;
         padding-bottom: 5rem;
     }
-    header, footer, [data-testid="collapsedControl"] {display: none;}
+    header, footer {visibility: hidden;}
     
     /* タブのデザイン */
     .stTabs [data-baseweb="tab"] {
@@ -58,16 +58,16 @@ st.markdown("""
         color: #555;
     }
     
-    /* カテゴリタグ（marumie風） */
+    /* カテゴリタグのデザイン */
     .cat-tag {
         display: inline-block;
         padding: 2px 8px;
         border-radius: 12px;
-        font-size: 0.75rem;
+        font-size: 0.7rem;
         font-weight: bold;
-        background-color: #f0f2f6; /* 薄いグレー */
+        background-color: #f0f2f6;
         color: #555;
-        border: 1px solid #e0e0e0;
+        border: 1px solid #ddd;
         margin-top: 4px;
     }
 </style>
@@ -111,16 +111,21 @@ if 'user_id' not in st.session_state:
 user_id = st.session_state['user_id']
 
 # ==========================================
-# 📱 データ取得 & 管理者メニュー
+# 📱 データ取得 & サイドバー管理者メニュー
 # ==========================================
 df_display = pd.DataFrame() 
 show_deleted = False
 
-if user_id == ADMIN_USER:
-    with st.expander(f"👑 管理者メニュー ({user_id})", expanded=False):
-        c1, c2, c3 = st.columns([1, 2, 1])
-        show_deleted = c1.checkbox("🗑️ 削除済を表示")
+# ★修正：管理者メニューをサイドバーに戻しました
+with st.sidebar:
+    st.write(f"👤 **{user_id}**")
+    
+    if user_id == ADMIN_USER:
+        st.divider()
+        st.caption("👑 管理者メニュー")
+        show_deleted = st.checkbox("🗑️ 削除済を表示")
         
+        # データ取得ロジック
         if show_deleted:
             response = supabase.table('receipts').select("*").not_.is_('deleted_at', 'null').order('deleted_at', desc=True).execute()
         else:
@@ -131,28 +136,25 @@ if user_id == ADMIN_USER:
         if not raw_df.empty:
             user_list = raw_df['user_id'].unique().tolist()
             user_list.insert(0, "全員")
-            selected_view_user = c2.selectbox("表示ユーザー", user_list)
+            selected_view_user = st.selectbox("表示ユーザー", user_list)
+            
             if selected_view_user == "全員":
                 df_display = raw_df.copy()
             else:
                 df_display = raw_df[raw_df['user_id'] == selected_view_user].copy()
         else:
             df_display = raw_df.copy()
-            
-        if c3.button("ログアウト"):
-            del st.session_state['user_id']
-            st.rerun()
-else:
-    # 一般ユーザー
-    c_head1, c_head2 = st.columns([3, 1])
-    c_head1.subheader(f"👋 {user_id}")
-    if c_head2.button("ログアウト"):
+    
+    else:
+        # 一般ユーザー
+        response = supabase.table('receipts').select("*").eq('user_id', user_id).is_('deleted_at', 'null').order('date', desc=True).execute()
+        raw_df = pd.DataFrame(response.data)
+        df_display = raw_df.copy()
+
+    st.divider()
+    if st.button("ログアウト", type="primary"):
         del st.session_state['user_id']
         st.rerun()
-        
-    response = supabase.table('receipts').select("*").eq('user_id', user_id).is_('deleted_at', 'null').order('date', desc=True).execute()
-    raw_df = pd.DataFrame(response.data)
-    df_display = raw_df.copy()
 
 # ==========================================
 # 📱 メインコンテンツ
@@ -245,12 +247,11 @@ with tab_dash:
 with tab_history:
     if not df_display.empty:
         
-        # --- 🔍 marumie風 検索＆フィルターエリア ---
+        # 検索機能
         with st.container():
             f_col1, f_col2 = st.columns([2, 1])
-            search_query = f_col1.text_input("🔍 キーワード検索", placeholder="店名やメモを検索...")
+            search_query = f_col1.text_input("🔍 キーワード", placeholder="検索...")
             
-            # 月の選択肢を作る
             df_display['month_str'] = df_display['date'].dt.strftime('%Y-%m')
             month_list = df_display['month_str'].unique().tolist()
             month_list.insert(0, "全期間")
@@ -258,67 +259,44 @@ with tab_history:
 
         st.markdown("<hr style='margin: 0.5em 0 1em 0; opacity:0.2;'>", unsafe_allow_html=True)
         
-        # --- フィルタリング処理 ---
+        # フィルタリング
         filtered_df = df_display.copy()
-        
-        # 1. 月で絞り込み
         if selected_month != "全期間":
             filtered_df = filtered_df[filtered_df['month_str'] == selected_month]
-            
-        # 2. 検索ワードで絞り込み
         if search_query:
-            # メモかカテゴリに文字が含まれていればヒット
             filtered_df = filtered_df[
                 filtered_df['memo'].str.contains(search_query, na=False) | 
                 filtered_df['category'].str.contains(search_query, na=False)
             ]
 
-        # --- リスト表示 ---
         if not filtered_df.empty:
-            # 日付で並び替え
             filtered_df = filtered_df.sort_values('date', ascending=False)
             
             for index, row in filtered_df.iterrows():
                 icon = row['category'][0] if row['category'] else "💰"
                 date_str = row['date'].strftime('%Y.%m.%d')
                 
-                # marumie風のきれいなリストデザイン
-                st.markdown(
-                    f"""
-                    <div style="
-                        background-color: white;
-                        padding: 12px 0;
-                        border-bottom: 1px solid #f0f0f0;
-                        display: flex;
-                        align-items: center;
-                        justify-content: space-between;
-                    ">
-                        <div style="display: flex; align-items: flex-start; gap: 10px;">
-                            <div style="
-                                background-color: #f8f9fa;
-                                width: 40px; height: 40px;
-                                border-radius: 50%;
-                                display: flex; align-items: center; justify-content: center;
-                                font-size: 1.2rem;
-                            ">{icon}</div>
-                            
-                            <div>
-                                <div style="font-weight: bold; font-size: 0.95rem; color: #333;">{row['memo']}</div>
-                                <div style="font-size: 0.75rem; color: #888; margin-top:2px;">{date_str}</div>
-                                <span class="cat-tag">{row['category']}</span>
-                            </div>
-                        </div>
-                        
-                        <div style="text-align: right;">
-                            <div style="font-weight: bold; font-size: 1rem; color: #333;">¥{row['amount']:,}</div>
-                        </div>
-                    </div>
-                    """, 
-                    unsafe_allow_html=True
-                )
+                # ★修正ポイント：HTML生成時にインデント（空白）を削除しました。これでコードブロックになりません。
+                html_code = f"""
+<div style="background-color: white; padding: 12px 10px; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px;">
+    <div style="display: flex; align-items: flex-start; gap: 10px;">
+        <div style="background-color: #f8f9fa; width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; border: 1px solid #eee;">
+            {icon}
+        </div>
+        <div>
+            <div style="font-weight: bold; font-size: 0.95rem; color: #333;">{row['memo']}</div>
+            <div style="font-size: 0.75rem; color: #888; margin-top:2px;">{date_str}</div>
+            <span class="cat-tag">{row['category']}</span>
+        </div>
+    </div>
+    <div style="text-align: right;">
+        <div style="font-weight: bold; font-size: 1rem; color: #333;">¥{row['amount']:,}</div>
+    </div>
+</div>
+"""
+                st.markdown(html_code, unsafe_allow_html=True)
         else:
-            st.caption("条件に一致するデータが見つかりません 💦")
-            
+            st.caption("見つかりません")
     else:
         st.info("データなし")
 
