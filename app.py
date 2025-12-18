@@ -43,10 +43,11 @@ st.markdown("""
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     }
     .block-container {
-        padding-top: 1rem;
+        /* ★上部の余白をしっかり取る（切れるのを防ぐ） */
+        padding-top: 3.5rem; 
         padding-bottom: 5rem;
     }
-    /* ヘッダーを表示（サイドバーボタンのため）、フッターのみ隠す */
+    /* ヘッダーは隠さず、フッターのみ隠す（サイドバーボタンを確実に表示するため） */
     footer {visibility: hidden;}
     
     /* タブのデザイン調整 */
@@ -58,7 +59,7 @@ st.markdown("""
         font-weight: 600;
     }
     
-    /* カテゴリタグ（ダークブルー背景用） */
+    /* カテゴリタグのデザイン */
     .cat-tag {
         display: inline-block;
         padding: 2px 10px;
@@ -72,9 +73,6 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
-
-# ==========================================
-# 🔐 ログイン機能
 # ==========================================
 def login():
     st.title("🔐 家計簿アプリ")
@@ -349,3 +347,4 @@ with tab_edit:
                 st.rerun()
     else:
         st.info("データがありません")
+
