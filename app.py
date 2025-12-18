@@ -32,7 +32,7 @@ def init_connection():
 
 supabase = init_connection()
 
-# サイドバーを最初から展開した状態にする
+# サイドバー設定（最初から開く設定）
 st.set_page_config(page_title="家計簿", page_icon="💰", layout="wide", initial_sidebar_state="expanded")
 
 # --- 📱 ダークモード・UIカスタムCSS ---
@@ -43,14 +43,14 @@ st.markdown("""
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     }
     .block-container {
-        /* ★上部の余白をしっかり取る（切れるのを防ぐ） */
+        /* ★スマホで文字が切れるのを防ぐための余白 */
         padding-top: 3.5rem; 
         padding-bottom: 5rem;
     }
-    /* ヘッダーは隠さず、フッターのみ隠す（サイドバーボタンを確実に表示するため） */
+    /* フッターを隠す */
     footer {visibility: hidden;}
     
-    /* タブのデザイン調整 */
+    /* タブのデザイン */
     .stTabs [data-baseweb="tab"] {
         flex-grow: 1;
         justify-content: center;
@@ -59,7 +59,7 @@ st.markdown("""
         font-weight: 600;
     }
     
-    /* カテゴリタグのデザイン */
+    /* カテゴリタグのデザイン（ダークブルー用） */
     .cat-tag {
         display: inline-block;
         padding: 2px 10px;
@@ -73,63 +73,54 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
+
 # ==========================================
-# 🔐 ログイン機能（1回目のエラー対策版）
+# 🔐 ログイン機能
 # ==========================================
 def login():
     st.title("🔐 家計簿アプリ")
     tab1, tab2 = st.tabs(["ログイン", "新規登録"])
-
     with tab1:
         with st.form("login_form"):
             l_user = st.text_input("ユーザー名")
             l_pass = st.text_input("パスワード", type="password")
-            submitted = st.form_submit_button("ログイン", type="primary", use_container_width=True)
-            
-            if submitted:
+            if st.form_submit_button("ログイン", type="primary", use_container_width=True):
                 if not l_user or not l_pass:
-                    st.error("ユーザー名とパスワードを入力してください")
+                    st.error("入力してください")
                 else:
                     try:
-                        # Supabaseへの問い合わせ
                         res = supabase.table('users').select("*").eq('username', l_user).eq('password', l_pass).execute()
-                        
                         if len(res.data) > 0:
-                            # 1. ユーザーIDを保持
                             st.session_state['user_id'] = l_user
-                            # 2. 成功メッセージを出す（これでユーザーが一瞬待ってくれる）
-                            st.success("ログイン成功！読み込んでいます...")
-                            # 3. 0.5秒だけ待機してステートを安定させる
-                            time.sleep(0.5)
-                            # 4. 画面更新
+                            st.success("ログイン成功！")
+                            time.sleep(0.3) # 同期のための待機
                             st.rerun()
                         else:
-                            st.error("ユーザー名またはパスワードが正しくありません")
+                            st.error("ログイン情報が正しくありません")
                     except Exception as e:
-                        # 1回目に接続エラー（タイムアウト等）が起きた場合、
-                        # 赤いエラー画面で止めず、注意喚起を出して「もう一度」を促す
-                        st.warning("接続に少し時間がかかっています。もう一度ボタンを押してください。")
-                        # 開発中の場合は以下を有効にするとエラー詳細が見れます
-                        # st.caption(f"Debug: {e}")
+                        # 1回目の接続エラー対策
+                        st.warning("接続を確認中... もう一度ログインボタンを押してください。")
 
     with tab2:
         with st.form("reg_form"):
             r_user = st.text_input("希望のユーザー名")
             r_pass = st.text_input("パスワード", type="password")
-            reg_submitted = st.form_submit_button("登録する", type="primary", use_container_width=True)
-            if reg_submitted:
-                if not r_user or not r_pass:
-                    st.error("入力してください")
-                else:
-                    try:
-                        supabase.table('users').insert({"username": r_user, "password": r_pass}).execute()
-                        st.success("登録完了！ログインタブからログインしてください。")
-                    except:
-                        st.error("その名前は既に使用されています")
-            if 'user_id' not in st.session_state:
-                login()
-                st.stop()
-user_id = st.session_state['user_id']
+            if st.form_submit_button("登録する", type="primary", use_container_width=True):
+                try:
+                    supabase.table('users').insert({"username": r_user, "password": r_pass}).execute()
+                    st.success("登録完了！ログインしてください。")
+                except:
+                    st.error("その名前は既に使用されています")
+
+# ==========================================
+# 🔐 ログインチェック（KeyError防止版）
+# ==========================================
+if 'user_id' not in st.session_state:
+    login()
+    st.stop()
+else:
+    user_id = st.session_state['user_id']
+
 # ==========================================
 # 📱 データ取得 & サイドバー
 # ==========================================
@@ -155,7 +146,6 @@ with st.sidebar:
             user_list = raw_df['user_id'].unique().tolist()
             user_list.insert(0, "全員")
             selected_view_user = st.selectbox("表示ユーザー", user_list)
-            
             if selected_view_user == "全員":
                 df_display = raw_df.copy()
             else:
@@ -173,8 +163,9 @@ with st.sidebar:
         st.rerun()
 
 # ==========================================
-# 📱 メインコンテンツ
+# 📱 メイン画面
 # ==========================================
+st.write("") # タイトル切れ対策の空行
 st.subheader("💰 家計簿")
 
 tab_input, tab_dash, tab_history, tab_edit = st.tabs(["✏️ 入力", "📊 分析", "📝 ログ", "🔧 修正"])
@@ -213,10 +204,10 @@ with tab_input:
         
         if st.form_submit_button("記録する", type="primary", use_container_width=True):
             if show_deleted:
-                st.error("管理モード中は記録できません")
+                st.error("管理モード中は記録不可")
                 st.stop()
             if not final_category or amount == 0:
-                st.warning("内容を確認してください")
+                st.warning("入力を確認してください")
                 st.stop()
 
             if cat_mode == "カテゴリ追加":
@@ -237,7 +228,6 @@ with tab_input:
 with tab_dash:
     if not df_display.empty:
         df_display['date'] = pd.to_datetime(df_display['date'])
-        
         st.caption("📈 日別の推移")
         chart_data = df_display.copy().set_index('date').resample('D')['amount'].sum().reset_index()
         fig_bar = px.bar(chart_data, x='date', y='amount', color_discrete_sequence=['#4DA6FF'])
@@ -255,8 +245,6 @@ with tab_dash:
             total = df_this_month['amount'].sum()
             fig_pie.add_annotation(text=f"¥{total:,}", showarrow=False, font_size=16, font_color="#E0E1DD")
             st.plotly_chart(fig_pie, use_container_width=True)
-        else:
-            st.info("今月のデータはありません")
     else:
         st.info("データがありません")
 
@@ -268,7 +256,6 @@ with tab_history:
         with st.container():
             f_col1, f_col2 = st.columns([2, 1])
             search_query = f_col1.text_input("🔍 検索", placeholder="キーワード...")
-            
             df_display['month_str'] = df_display['date'].dt.strftime('%Y-%m')
             month_list = sorted(df_display['month_str'].unique().tolist(), reverse=True)
             month_list.insert(0, "全期間")
@@ -280,10 +267,7 @@ with tab_history:
         if selected_month != "全期間":
             filtered_df = filtered_df[filtered_df['month_str'] == selected_month]
         if search_query:
-            filtered_df = filtered_df[
-                filtered_df['memo'].str.contains(search_query, na=False) | 
-                filtered_df['category'].str.contains(search_query, na=False)
-            ]
+            filtered_df = filtered_df[filtered_df['memo'].str.contains(search_query, na=False) | filtered_df['category'].str.contains(search_query, na=False)]
 
         if not filtered_df.empty:
             filtered_df = filtered_df.sort_values('date', ascending=False)
@@ -291,7 +275,7 @@ with tab_history:
                 icon = row['category'][0] if row['category'] else "💰"
                 date_str = row['date'].strftime('%Y.%m.%d')
                 
-                # HTMLコードの先頭にスペースを入れないことで、コードブロック化を防止
+                # インデントなしのHTML（コードブロック化防止）
                 html_code = f"""
 <div style="background-color: #1B263B; padding: 12px 10px; border-bottom: 1px solid #2B3A55; display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; border-radius: 8px; color: #E0E1DD;">
 <div style="display: flex; align-items: flex-start; gap: 12px;">
@@ -310,8 +294,6 @@ with tab_history:
 </div>
 """
                 st.markdown(html_code, unsafe_allow_html=True)
-        else:
-            st.caption("見つかりませんでした")
     else:
         st.info("データがありません")
 
@@ -320,55 +302,29 @@ with tab_history:
 # ------------------------------------------
 with tab_edit:
     if show_deleted:
-        st.warning("閲覧モード（削除済みデータ表示中）は操作できません")
+        st.warning("閲覧モード（削除済み表示中）は操作不可")
     elif not df_display.empty:
-        st.caption("対象データを選択してください")
         edit_df = df_display.copy().sort_values('date', ascending=False)
         edit_df['label'] = edit_df.apply(lambda x: f"{x['date'].strftime('%m/%d')} {x['memo']} ¥{x['amount']}", axis=1)
-        
-        selected_record_id = st.selectbox(
-            "修正・削除する記録",
-            edit_df['id'],
-            format_func=lambda x: edit_df[edit_df['id'] == x]['label'].values[0]
-        )
+        selected_record_id = st.selectbox("修正対象を選択", edit_df['id'], format_func=lambda x: edit_df[edit_df['id'] == x]['label'].values[0])
         target_row = df_display[df_display['id'] == selected_record_id].iloc[0]
 
         with st.form("edit_form"):
             c1, c2 = st.columns(2)
             new_date = c1.date_input("日付", target_row['date'])
             new_amount = c2.number_input("金額", value=target_row['amount'], step=100)
-            
-            # カテゴリのインデックス取得
-            cur_idx = 0
-            if target_row['category'] in category_list:
-                cur_idx = category_list.index(target_row['category'])
-            else:
-                category_list.append(target_row['category'])
-                cur_idx = len(category_list) - 1
-            
-            new_cat = st.selectbox("カテゴリ", category_list, index=cur_idx)
             new_memo = st.text_input("メモ", target_row['memo'])
-
+            
             b1, b2 = st.columns(2)
             if b1.form_submit_button("更新", type="primary", use_container_width=True):
-                supabase.table('receipts').update({
-                    "date": str(new_date),
-                    "category": new_cat,
-                    "memo": new_memo,
-                    "amount": new_amount
-                }).eq('id', int(selected_record_id)).execute()
-                st.success("更新しました！")
+                supabase.table('receipts').update({"date": str(new_date), "memo": new_memo, "amount": new_amount}).eq('id', int(selected_record_id)).execute()
+                st.success("更新しました")
                 time.sleep(0.5)
                 st.rerun()
 
             if b2.form_submit_button("削除", use_container_width=True):
                 now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
                 supabase.table('receipts').update({"deleted_at": now_iso}).eq('id', int(selected_record_id)).execute()
-                st.success("削除しました！")
+                st.success("削除しました")
                 time.sleep(0.5)
                 st.rerun()
-    else:
-        st.info("データがありません")
-
-
-
