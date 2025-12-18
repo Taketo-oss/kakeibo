@@ -94,27 +94,46 @@ with st.sidebar:
         del st.session_state['user_id']
         st.rerun()
 
-# データ取得
+# データの取得（ゴミ箱機能の実装）
 df_display = pd.DataFrame() 
-if user_id == ADMIN_USER:
-    response = supabase.table('receipts').select("*").order('date', desc=True).execute()
-else:
-    response = supabase.table('receipts').select("*").eq('user_id', user_id).order('date', desc=True).execute()
-raw_df = pd.DataFrame(response.data)
 
-# 管理者フィルター
-if user_id == ADMIN_USER and not raw_df.empty:
-    with st.sidebar:
-        st.divider()
-        st.caption("👑 管理者メニュー")
+# フィルタリング設定
+show_deleted = False
+
+# 管理者だけが「削除済み」を見られるようにする
+if user_id == ADMIN_USER:
+    st.sidebar.divider()
+    st.sidebar.caption("👑 管理者メニュー")
+    
+    # 削除済みデータを見るチェックボックス
+    show_deleted = st.sidebar.checkbox("🗑️ 削除済みの履歴を見る")
+    
+    # 全ユーザーデータの取得
+    if show_deleted:
+        # 削除されたものだけ取得 (deleted_at が null じゃない)
+        response = supabase.table('receipts').select("*").not_.is_('deleted_at', 'null').order('deleted_at', desc=True).execute()
+        st.warning("⚠️ 現在、削除されたデータを表示しています")
+    else:
+        # 生きているデータだけ取得 (deleted_at が null)
+        response = supabase.table('receipts').select("*").is_('deleted_at', 'null').order('date', desc=True).execute()
+    
+    raw_df = pd.DataFrame(response.data)
+    
+    if not raw_df.empty:
         user_list = raw_df['user_id'].unique().tolist()
         user_list.insert(0, "全員")
-        selected_view_user = st.selectbox("誰のデータを見る？", user_list)
+        selected_view_user = st.sidebar.selectbox("誰のデータを見る？", user_list)
         if selected_view_user == "全員":
             df_display = raw_df.copy()
         else:
             df_display = raw_df[raw_df['user_id'] == selected_view_user].copy()
+    else:
+        df_display = raw_df.copy()
+
 else:
+    # 一般ユーザーは自分の「生きている」データだけ
+    response = supabase.table('receipts').select("*").eq('user_id', user_id).is_('deleted_at', 'null').order('date', desc=True).execute()
+    raw_df = pd.DataFrame(response.data)
     df_display = raw_df.copy()
 
 
@@ -122,11 +141,22 @@ st.title("💰 家計簿アプリ")
 tab_input, tab_dash, tab_history, tab_edit = st.tabs(["✏️ 入力", "📊 分析", "📝 履歴", "🔧 修正・削除"])
 
 # ==========================================
-# 1. 入力タブ (カテゴリ選択をシンプルに！)
+# 1. 入力タブ
 # ==========================================
 with tab_input:
-    st.header("新規記録")
-    
+    st.header("✏️ 新規記録")
+
+    # 今月の出費表示
+    if not df_display.empty and not show_deleted:
+        try:
+            current_month_str = today.strftime("%Y-%m")
+            df_display['date'] = pd.to_datetime(df_display['date'])
+            this_month_total = df_display[df_display['date'].dt.strftime('%Y-%m') == current_month_str]['amount'].sum()
+            st.metric(label=f"{today.month}月の支出合計", value=f"¥{this_month_total:,}")
+            st.divider()
+        except:
+            pass
+
     # カテゴリリスト取得
     try:
         cat_response = supabase.table('categories').select("name").execute()
@@ -134,12 +164,12 @@ with tab_input:
     except:
         category_list = ["食費", "その他"]
 
-    # ★改善点：ラベルを消して、選択肢をシンプルに変更
+    # カテゴリモード
     cat_mode = st.radio(
-        "カテゴリモード",  # 内部的な名前（label_visibility="collapsed"で見えなくなる）
+        "カテゴリモード", 
         ["既存リスト", "カテゴリ追加"], 
         horizontal=True,
-        label_visibility="collapsed" # これで「カテゴリをどうする？」的な文字を消します
+        label_visibility="collapsed"
     )
 
     final_category = ""
@@ -148,7 +178,8 @@ with tab_input:
         final_category = st.selectbox("カテゴリを選択", category_list)
     else:
         final_category = st.text_input("新しいカテゴリ名", placeholder="例：推し活")
-        st.info("※入力して記録するとリストに追加されます")
+        if final_category:
+            st.caption(f"✨ 「{final_category}」を新しく登録します")
 
     # 入力フォーム
     with st.form("input_form"):
@@ -157,9 +188,13 @@ with tab_input:
         amount = col2.number_input("金額", min_value=0, step=100)
         memo = st.text_input("メモ・店名", placeholder="例: コンビニ")
         
-        submitted = st.form_submit_button("記録する", type="primary")
+        submitted = st.form_submit_button("記録する", type="primary", use_container_width=True)
         
         if submitted:
+            if show_deleted:
+                st.error("削除済みデータ表示中は記録できません。チェックを外してください。")
+                st.stop()
+                
             if not final_category:
                 st.error("カテゴリを入力してください")
                 st.stop()
@@ -185,7 +220,8 @@ with tab_input:
             }
             supabase.table("receipts").insert(data).execute()
             
-            st.success("✅ 記録しました！")
+            st.toast("✅ 記録しました！", icon="🎉")
+            st.balloons()
             time.sleep(1)
             st.rerun()
 
@@ -213,7 +249,7 @@ with tab_dash:
         st.plotly_chart(fig_bar, use_container_width=True)
 
         st.divider()
-        st.subheader("カテゴリ割合 (今月)")
+        st.subheader("カテゴリ割合")
         current_month = today.strftime("%Y-%m")
         df_this_month = df_display[df_display['date'].dt.strftime('%Y-%m') == current_month]
         
@@ -235,7 +271,24 @@ with tab_history:
         cols = ['date', 'category', 'memo', 'amount']
         if user_id == ADMIN_USER:
             cols.insert(0, 'user_id')
-        st.dataframe(df_display[cols], use_container_width=True)
+        
+        # 削除済みデータなら削除日時も表示
+        if show_deleted and 'deleted_at' in df_display.columns:
+            cols.append('deleted_at')
+
+        st.dataframe(
+            df_display[cols], 
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "date": st.column_config.DateColumn("日付", format="YYYY/MM/DD"),
+                "category": st.column_config.TextColumn("カテゴリ"),
+                "memo": st.column_config.TextColumn("メモ"),
+                "amount": st.column_config.NumberColumn("金額", format="¥%d"),
+                "user_id": st.column_config.TextColumn("ユーザー"),
+                "deleted_at": st.column_config.DatetimeColumn("削除日時", format="MM/DD HH:mm"),
+            }
+        )
     else:
         st.info("データがありません")
 
@@ -244,7 +297,10 @@ with tab_history:
 # ==========================================
 with tab_edit:
     st.header("🔧 修正・削除")
-    if not df_display.empty:
+    
+    if show_deleted:
+        st.warning("現在、削除済みデータを表示しているため、修正・削除はできません。")
+    elif not df_display.empty:
         st.caption("修正したいデータを選んでください")
         
         edit_options = df_display.copy()
@@ -286,9 +342,15 @@ with tab_edit:
                 time.sleep(1)
                 st.rerun()
 
+            # ★ここが重要：物理削除ではなく、論理削除（deleted_atを入れる）にする
             if btn_col2.form_submit_button("削除する", type="primary"):
-                supabase.table('receipts').delete().eq('id', int(selected_record_id)).execute()
-                st.success("削除しました！")
+                # 削除日時を現在時刻で更新
+                now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                supabase.table('receipts').update({
+                    "deleted_at": now_iso
+                }).eq('id', int(selected_record_id)).execute()
+                
+                st.success("ゴミ箱に移動しました！（管理者は後で確認できます）")
                 time.sleep(1)
                 st.rerun()
     else:
