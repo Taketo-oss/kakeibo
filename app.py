@@ -74,40 +74,58 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 # ==========================================
+# 🔐 ログイン機能（1回目のエラー対策版）
+# ==========================================
 def login():
     st.title("🔐 家計簿アプリ")
     tab1, tab2 = st.tabs(["ログイン", "新規登録"])
+
     with tab1:
         with st.form("login_form"):
             l_user = st.text_input("ユーザー名")
             l_pass = st.text_input("パスワード", type="password")
-            if st.form_submit_button("ログイン", type="primary", use_container_width=True):
-                try:
-                    res = supabase.table('users').select("*").eq('username', l_user).eq('password', l_pass).execute()
-                    if len(res.data) > 0:
-                        st.session_state['user_id'] = l_user
-                        st.rerun()
-                    else:
-                        st.error("ログイン情報が正しくありません")
-                except:
-                    st.error("エラーが発生しました")
+            submitted = st.form_submit_button("ログイン", type="primary", use_container_width=True)
+            
+            if submitted:
+                if not l_user or not l_pass:
+                    st.error("ユーザー名とパスワードを入力してください")
+                else:
+                    try:
+                        # Supabaseへの問い合わせ
+                        res = supabase.table('users').select("*").eq('username', l_user).eq('password', l_pass).execute()
+                        
+                        if len(res.data) > 0:
+                            # 1. ユーザーIDを保持
+                            st.session_state['user_id'] = l_user
+                            # 2. 成功メッセージを出す（これでユーザーが一瞬待ってくれる）
+                            st.success("ログイン成功！読み込んでいます...")
+                            # 3. 0.5秒だけ待機してステートを安定させる
+                            time.sleep(0.5)
+                            # 4. 画面更新
+                            st.rerun()
+                        else:
+                            st.error("ユーザー名またはパスワードが正しくありません")
+                    except Exception as e:
+                        # 1回目に接続エラー（タイムアウト等）が起きた場合、
+                        # 赤いエラー画面で止めず、注意喚起を出して「もう一度」を促す
+                        st.warning("接続に少し時間がかかっています。もう一度ボタンを押してください。")
+                        # 開発中の場合は以下を有効にするとエラー詳細が見れます
+                        # st.caption(f"Debug: {e}")
+
     with tab2:
         with st.form("reg_form"):
             r_user = st.text_input("希望のユーザー名")
             r_pass = st.text_input("パスワード", type="password")
-            if st.form_submit_button("登録する", type="primary", use_container_width=True):
-                try:
-                    supabase.table('users').insert({"username": r_user, "password": r_pass}).execute()
-                    st.success("登録完了！ログインしてください。")
-                except:
-                    st.error("その名前は既に使用されています")
-
-if 'user_id' not in st.session_state:
-    login()
-    st.stop()
-
-user_id = st.session_state['user_id']
-
+            reg_submitted = st.form_submit_button("登録する", type="primary", use_container_width=True)
+            if reg_submitted:
+                if not r_user or not r_pass:
+                    st.error("入力してください")
+                else:
+                    try:
+                        supabase.table('users').insert({"username": r_user, "password": r_pass}).execute()
+                        st.success("登録完了！ログインタブからログインしてください。")
+                    except:
+                        st.error("その名前は既に使用されています")
 # ==========================================
 # 📱 データ取得 & サイドバー
 # ==========================================
@@ -347,4 +365,5 @@ with tab_edit:
                 st.rerun()
     else:
         st.info("データがありません")
+
 
