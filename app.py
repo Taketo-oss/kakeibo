@@ -78,7 +78,7 @@ st.markdown("""
 # 🔐 ログイン機能
 # ==========================================
 def login():
-    st.title("🔐 家計簿アプリ")
+    st.title("🔐 家計簿")
     tab1, tab2 = st.tabs(["ログイン", "新規登録"])
     with tab1:
         with st.form("login_form"):
@@ -328,3 +328,4 @@ with tab_edit:
                 st.success("削除しました")
                 time.sleep(0.5)
                 st.rerun()
+
