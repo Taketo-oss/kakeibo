@@ -32,13 +32,12 @@ def init_connection():
 
 supabase = init_connection()
 
-# サイドバー設定（最初から開く設定）
+# サイドバー設定
 st.set_page_config(page_title="家計簿", page_icon="😸", layout="wide", initial_sidebar_state="expanded")
 
 # --- 📱 ダークモード・UIカスタムCSS ---
 st.markdown("""
 <style>
-    /* 全体のフォント調整 */
     html, body, [class*="css"] {
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     }
@@ -167,10 +166,10 @@ tab_input, tab_dash, tab_history, tab_edit = st.tabs(["✏️ 入力", "📊 分
 # ------------------------------------------
 with tab_input:
     if not df_display.empty and not show_deleted:
-        current_month_str = today.strftime("%Y-%m")
         df_display['date'] = pd.to_datetime(df_display['date'])
-        this_month = df_display[df_display['date'].dt.strftime('%Y-%m') == current_month_str]['amount'].sum()
-        st.metric(f"📅 {today.month}月の出費", f"¥{this_month:,}")
+        current_month_str = today.strftime("%Y-%m")
+        this_month_total = df_display[df_display['date'].dt.strftime('%Y-%m') == current_month_str]['amount'].sum()
+        st.metric(f"📅 {today.month}月の出費", f"¥{this_month_total:,}")
         st.markdown("<hr style='margin: 0.5em 0; opacity:0.1;'>", unsafe_allow_html=True)
 
     try:
@@ -179,13 +178,10 @@ with tab_input:
     except:
         category_list = ["🍔 食費", "🚋 交通費", "💊 日用品", "🕹️ 趣味", "🏠 固定費", "❓ その他"]
 
-    cat_mode = "既存リスト"
     final_category = st.selectbox("カテゴリ", category_list)
-    
     with st.expander("➕ カテゴリを新規作成"):
         new_cat_input = st.text_input("新しいカテゴリ名", placeholder="例：🎮 推し活")
         if new_cat_input:
-            cat_mode = "カテゴリ追加"
             final_category = new_cat_input
 
     with st.form("input_form"):
@@ -193,21 +189,7 @@ with tab_input:
         date = c1.date_input("日付", today)
         amount = c2.number_input("金額 (円)", min_value=0, step=100)
         memo = st.text_input("メモ", placeholder="内容を入力")
-        
         if st.form_submit_button("記録する", type="primary", use_container_width=True):
-            if show_deleted:
-                st.error("管理モード中は記録不可")
-                st.stop()
-            if not final_category or amount == 0:
-                st.warning("入力を確認してください")
-                st.stop()
-
-            if cat_mode == "カテゴリ追加":
-                try:
-                    supabase.table('categories').insert({"name": final_category}).execute()
-                except:
-                    pass
-
             data = {"user_id": user_id, "date": str(date), "category": final_category, "memo": memo, "amount": amount}
             supabase.table("receipts").insert(data).execute()
             st.toast("✅ 記録完了！", icon="🎉")
@@ -215,59 +197,59 @@ with tab_input:
             st.rerun()
 
 # ------------------------------------------
-# 2. 分析タブ (★大幅強化版)
+# 2. 分析タブ (★カテゴリ割合の動的切り替え追加)
 # ------------------------------------------
 with tab_dash:
     if not df_display.empty:
         df_display['date'] = pd.to_datetime(df_display['date'])
         
-        # --- 表示単位の切り替えボタン ---
-        view_mode = st.radio("表示単位", ["日別", "週別", "月別", "年別"], horizontal=True)
+        # 1. 分析単位の選択
+        view_mode = st.radio("分析・集計の単位", ["日別", "週別", "月別", "年別"], horizontal=True, key="dash_view_mode")
         
-        st.caption(f"📈 {view_mode}の推移")
-        
-        # グラフ用のデータ加工
+        # --- A. 推移グラフ ---
+        st.caption(f"📈 支出の推移 ({view_mode})")
         df_chart = df_display.copy().set_index('date')
-        
         if view_mode == "日別":
             chart_data = df_chart.resample('D')['amount'].sum().reset_index()
         elif view_mode == "週別":
-            # 月曜始まりの週で集計
             chart_data = df_chart.resample('W-MON')['amount'].sum().reset_index()
         elif view_mode == "月別":
             chart_data = df_chart.resample('MS')['amount'].sum().reset_index()
             chart_data['date'] = chart_data['date'].dt.strftime('%Y-%m')
-        else: # 年別
+        else: 
             chart_data = df_chart.resample('YS')['amount'].sum().reset_index()
             chart_data['date'] = chart_data['date'].dt.strftime('%Y')
 
-        # 棒グラフの描画
         fig_bar = px.bar(chart_data, x='date', y='amount', color_discrete_sequence=['#4DA6FF'])
-        fig_bar.update_layout(
-            xaxis_title=None, 
-            yaxis_title=None, 
-            showlegend=False, 
-            paper_bgcolor='rgba(0,0,0,0)', 
-            plot_bgcolor='rgba(0,0,0,0)', 
-            margin=dict(l=0, r=0, t=0, b=0), 
-            height=250
-        )
+        fig_bar.update_layout(xaxis_title=None, yaxis_title=None, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', margin=dict(l=0, r=0, t=0, b=0), height=230)
         st.plotly_chart(fig_bar, use_container_width=True)
             
         st.divider()
         
-        # カテゴリ内訳
-        st.caption("🍰 カテゴリ割合 (今月)")
-        current_month = today.strftime("%Y-%m")
-        df_this_month = df_display[df_display['date'].dt.strftime('%Y-%m') == current_month]
-        if not df_this_month.empty:
-            fig_pie = px.pie(df_this_month, values='amount', names='category', hole=0.5)
-            fig_pie.update_layout(showlegend=False, paper_bgcolor='rgba(0,0,0,0)', margin=dict(l=0, r=0, t=0, b=10), height=250)
-            total = df_this_month['amount'].sum()
-            fig_pie.add_annotation(text=f"¥{total:,}", showarrow=False, font_size=16, font_color="#E0E1DD")
+        # --- B. カテゴリ割合 (選択された単位の「最新期間」を表示) ---
+        label_map = {"日別": "今日", "週別": "今週", "月別": "今月", "年別": "今年"}
+        st.caption(f"🍰 カテゴリ割合 ({label_map[view_mode]})")
+        
+        # フィルタリングロジック
+        if view_mode == "日別":
+            df_filtered = df_display[df_display['date'].dt.date == today]
+        elif view_mode == "週別":
+            # 今週月曜日から今日まで
+            start_of_week = today - datetime.timedelta(days=today.weekday())
+            df_filtered = df_display[df_display['date'].dt.date >= start_of_week]
+        elif view_mode == "月別":
+            df_filtered = df_display[df_display['date'].dt.strftime('%Y-%m') == today.strftime('%Y-%m')]
+        else:
+            df_filtered = df_display[df_display['date'].dt.year == today.year]
+
+        if not df_filtered.empty:
+            fig_pie = px.pie(df_filtered, values='amount', names='category', hole=0.5)
+            fig_pie.update_layout(showlegend=True, paper_bgcolor='rgba(0,0,0,0)', margin=dict(l=0, r=0, t=10, b=10), height=300, legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5))
+            total_val = df_filtered['amount'].sum()
+            fig_pie.add_annotation(text=f"合計<br>¥{total_val:,}", showarrow=False, font_size=14, font_color="#E0E1DD")
             st.plotly_chart(fig_pie, use_container_width=True)
         else:
-            st.info("今月のデータはありません")
+            st.info(f"{label_map[view_mode]}のデータはありません")
     else:
         st.info("データがありません")
 
@@ -282,10 +264,8 @@ with tab_history:
             df_display['month_str'] = df_display['date'].dt.strftime('%Y-%m')
             month_list = sorted(df_display['month_str'].unique().tolist(), reverse=True)
             month_list.insert(0, "全期間")
-            selected_month = f_col2.selectbox("月別", month_list)
+            selected_month = f_col2.selectbox("月別フィルタ", month_list)
 
-        st.markdown("<hr style='margin: 0.5em 0 1em 0; opacity:0.1;'>", unsafe_allow_html=True)
-        
         filtered_df = df_display.copy()
         if selected_month != "全期間":
             filtered_df = filtered_df[filtered_df['month_str'] == selected_month]
@@ -297,7 +277,6 @@ with tab_history:
             for index, row in filtered_df.iterrows():
                 icon = row['category'][0] if row['category'] else "💰"
                 date_str = row['date'].strftime('%Y.%m.%d')
-                
                 html_code = f"""
 <div style="background-color: #1B263B; padding: 12px 10px; border-bottom: 1px solid #2B3A55; display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; border-radius: 8px; color: #E0E1DD;">
 <div style="display: flex; align-items: flex-start; gap: 12px;">
@@ -323,9 +302,7 @@ with tab_history:
 # 4. 修正・削除タブ
 # ------------------------------------------
 with tab_edit:
-    if show_deleted:
-        st.warning("閲覧モード（削除済み表示中）は操作不可")
-    elif not df_display.empty:
+    if not df_display.empty:
         edit_df = df_display.copy().sort_values('date', ascending=False)
         edit_df['label'] = edit_df.apply(lambda x: f"{x['date'].strftime('%m/%d')} {x['memo']} ¥{x['amount']}", axis=1)
         selected_record_id = st.selectbox("修正対象を選択", edit_df['id'], format_func=lambda x: edit_df[edit_df['id'] == x]['label'].values[0])
@@ -336,15 +313,12 @@ with tab_edit:
             new_date = c1.date_input("日付", target_row['date'])
             new_amount = c2.number_input("金額", value=target_row['amount'], step=100)
             new_memo = st.text_input("メモ", target_row['memo'])
-            
-            b1, b2 = st.columns(2)
-            if b1.form_submit_button("更新", type="primary", use_container_width=True):
+            if st.form_submit_button("更新", type="primary", use_container_width=True):
                 supabase.table('receipts').update({"date": str(new_date), "memo": new_memo, "amount": new_amount}).eq('id', int(selected_record_id)).execute()
                 st.success("更新しました")
                 time.sleep(0.5)
                 st.rerun()
-
-            if b2.form_submit_button("削除", use_container_width=True):
+            if st.form_submit_button("削除", use_container_width=True):
                 now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
                 supabase.table('receipts').update({"deleted_at": now_iso}).eq('id', int(selected_record_id)).execute()
                 st.success("削除しました")
