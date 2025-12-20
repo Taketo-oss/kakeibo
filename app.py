@@ -35,7 +35,7 @@ supabase = init_connection()
 # サイドバー設定（最初から開く設定）
 st.set_page_config(page_title="家計簿", page_icon="😸", layout="wide", initial_sidebar_state="expanded")
 
-# --- 📱 ダークモード・UIカスタムCSS ---😸
+# --- 📱 ダークモード・UIカスタムCSS ---
 st.markdown("""
 <style>
     /* 全体のフォント調整 */
@@ -43,14 +43,11 @@ st.markdown("""
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     }
     .block-container {
-        /* ★スマホで文字が切れるのを防ぐための余白 */
         padding-top: 3.5rem; 
         padding-bottom: 5rem;
     }
-    /* フッターを隠す */
     footer {visibility: hidden;}
     
-    /* タブのデザイン */
     .stTabs [data-baseweb="tab"] {
         flex-grow: 1;
         justify-content: center;
@@ -59,7 +56,6 @@ st.markdown("""
         font-weight: 600;
     }
     
-    /* カテゴリタグのデザイン（ダークブルー用） */
     .cat-tag {
         display: inline-block;
         padding: 2px 10px;
@@ -93,12 +89,11 @@ def login():
                         if len(res.data) > 0:
                             st.session_state['user_id'] = l_user
                             st.success("ログイン成功！")
-                            time.sleep(0.3) # 同期のための待機
+                            time.sleep(0.3)
                             st.rerun()
                         else:
                             st.error("ログイン情報が正しくありません")
                     except Exception as e:
-                        # 1回目の接続エラー対策
                         st.warning("接続を確認中... もう一度ログインボタンを押してください。")
 
     with tab2:
@@ -112,9 +107,6 @@ def login():
                 except:
                     st.error("その名前は既に使用されています")
 
-# ==========================================
-# 🔐 ログインチェック（KeyError防止版）
-# ==========================================
 if 'user_id' not in st.session_state:
     login()
     st.stop()
@@ -165,7 +157,7 @@ with st.sidebar:
 # ==========================================
 # 📱 メイン画面
 # ==========================================
-st.write("") # タイトル切れ対策の空行
+st.write("") 
 st.subheader("😸家計簿")
 
 tab_input, tab_dash, tab_history, tab_edit = st.tabs(["✏️ 入力", "📊 分析", "📝 ログ", "🔧 修正"])
@@ -223,20 +215,49 @@ with tab_input:
             st.rerun()
 
 # ------------------------------------------
-# 2. 分析タブ
+# 2. 分析タブ (★大幅強化版)
 # ------------------------------------------
 with tab_dash:
     if not df_display.empty:
         df_display['date'] = pd.to_datetime(df_display['date'])
-        st.caption("📈 日別の推移")
-        chart_data = df_display.copy().set_index('date').resample('D')['amount'].sum().reset_index()
+        
+        # --- 表示単位の切り替えボタン ---
+        view_mode = st.radio("表示単位", ["日別", "週別", "月別", "年別"], horizontal=True)
+        
+        st.caption(f"📈 {view_mode}の推移")
+        
+        # グラフ用のデータ加工
+        df_chart = df_display.copy().set_index('date')
+        
+        if view_mode == "日別":
+            chart_data = df_chart.resample('D')['amount'].sum().reset_index()
+        elif view_mode == "週別":
+            # 月曜始まりの週で集計
+            chart_data = df_chart.resample('W-MON')['amount'].sum().reset_index()
+        elif view_mode == "月別":
+            chart_data = df_chart.resample('MS')['amount'].sum().reset_index()
+            chart_data['date'] = chart_data['date'].dt.strftime('%Y-%m')
+        else: # 年別
+            chart_data = df_chart.resample('YS')['amount'].sum().reset_index()
+            chart_data['date'] = chart_data['date'].dt.strftime('%Y')
+
+        # 棒グラフの描画
         fig_bar = px.bar(chart_data, x='date', y='amount', color_discrete_sequence=['#4DA6FF'])
-        fig_bar.update_layout(xaxis_title=None, yaxis_title=None, showlegend=False, 
-                              paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
-                              margin=dict(l=0, r=0, t=0, b=0), height=200)
+        fig_bar.update_layout(
+            xaxis_title=None, 
+            yaxis_title=None, 
+            showlegend=False, 
+            paper_bgcolor='rgba(0,0,0,0)', 
+            plot_bgcolor='rgba(0,0,0,0)', 
+            margin=dict(l=0, r=0, t=0, b=0), 
+            height=250
+        )
         st.plotly_chart(fig_bar, use_container_width=True)
             
-        st.caption("🍰 カテゴリ割合")
+        st.divider()
+        
+        # カテゴリ内訳
+        st.caption("🍰 カテゴリ割合 (今月)")
         current_month = today.strftime("%Y-%m")
         df_this_month = df_display[df_display['date'].dt.strftime('%Y-%m') == current_month]
         if not df_this_month.empty:
@@ -245,6 +266,8 @@ with tab_dash:
             total = df_this_month['amount'].sum()
             fig_pie.add_annotation(text=f"¥{total:,}", showarrow=False, font_size=16, font_color="#E0E1DD")
             st.plotly_chart(fig_pie, use_container_width=True)
+        else:
+            st.info("今月のデータはありません")
     else:
         st.info("データがありません")
 
@@ -275,7 +298,6 @@ with tab_history:
                 icon = row['category'][0] if row['category'] else "💰"
                 date_str = row['date'].strftime('%Y.%m.%d')
                 
-                # インデントなしのHTML（コードブロック化防止）
                 html_code = f"""
 <div style="background-color: #1B263B; padding: 12px 10px; border-bottom: 1px solid #2B3A55; display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; border-radius: 8px; color: #E0E1DD;">
 <div style="display: flex; align-items: flex-start; gap: 12px;">
@@ -328,6 +350,3 @@ with tab_edit:
                 st.success("削除しました")
                 time.sleep(0.5)
                 st.rerun()
-
-
-
