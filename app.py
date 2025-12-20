@@ -33,9 +33,9 @@ def init_connection():
 supabase = init_connection()
 
 # サイドバー設定（最初から開く設定）
-st.set_page_config(page_title="家計簿", page_icon="💰", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="家計簿", page_icon="😸", layout="wide", initial_sidebar_state="expanded")
 
-# --- 📱 ダークモード・UIカスタムCSS ---
+# --- 📱 ダークモード・UIカスタムCSS ---😸
 st.markdown("""
 <style>
     /* 全体のフォント調整 */
@@ -78,7 +78,7 @@ st.markdown("""
 # 🔐 ログイン機能
 # ==========================================
 def login():
-    st.title("🔐 家計簿")
+    st.title("😿 家計簿")
     tab1, tab2 = st.tabs(["ログイン", "新規登録"])
     with tab1:
         with st.form("login_form"):
@@ -328,4 +328,5 @@ with tab_edit:
                 st.success("削除しました")
                 time.sleep(0.5)
                 st.rerun()
+
 
